@@ -1,8 +1,10 @@
 import '#nitro-internal-pollyfills'
+import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 
 import { useNitroApp } from 'nitropack/runtime'
 
+import { logger, requestContext } from './logger'
 import { generateRoutes, readResponseBody } from './static-writer'
 
 const nitroApp = useNitroApp()
@@ -27,7 +29,7 @@ function parseBody(req: import('node:http').IncomingMessage): Promise<any> {
       try {
         resolve(body ? JSON.parse(body) : {})
       } catch (e) {
-        reject(new Error('Invalid JSON body'))
+        reject(new Error('Invalid JSON body: ' + (e instanceof Error ? e.message : String(e))))
       }
     })
     req.on('error', reject)
@@ -61,70 +63,72 @@ async function generateAndRegister(routes: string[]) {
 /**
  * Create server and handle requests
  */
-const server = createServer(async (req, res) => {
-  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
+const server = createServer((req, res) => {
+  const requestId = (req.headers['x-request-id'] as string) || randomUUID()
+  const correlationId = req.headers['x-correlation-id'] as string | undefined
 
-  try {
-    // Health check
-    if (url.pathname === '/api/health' && req.method === 'GET') {
-      return sendJson(res, 200, {
-        status: 'ok',
-        timestamp: new Date().toISOString()
-      })
-    }
+  requestContext.run({ requestId, correlationId }, async () => {
+    const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
 
-    // Generate routes
-    if (url.pathname === '/api/generate' && req.method === 'POST') {
-      const body = await parseBody(req)
-      const routes: string[] = body.routes
-
-      if (!Array.isArray(routes) || routes.length === 0) {
-        return sendJson(res, 400, {
-          success: false,
-          error: 'Request body must include a non-empty "routes" array'
+    try {
+      // Health check
+      if (url.pathname === '/api/health' && req.method === 'GET') {
+        return sendJson(res, 200, {
+          status: 'ok',
+          timestamp: new Date().toISOString()
         })
       }
 
-      console.log(`📝 Generating ${routes.length} routes → ${OUTPUT_DIR}`)
+      // Generate routes
+      if (url.pathname === '/api/generate' && req.method === 'POST') {
+        const body = await parseBody(req)
+        const routes: string[] = body.routes
 
-      const result = await generateAndRegister(routes)
+        if (!Array.isArray(routes) || routes.length === 0) {
+          return sendJson(res, 400, {
+            success: false,
+            error: 'Request body must include a non-empty "routes" array'
+          })
+        }
 
-      console.log(
-        `✅ Generated ${result.totalGenerated}/${result.results.length} routes (${result.totalDiscovered} discovered)`
-      )
+        logger.start(`Generating ${routes.length} routes`)
 
-      return sendJson(res, 200, {
-        success: true,
-        summary: {
-          requested: routes.length,
-          generated: result.totalGenerated,
-          discovered: result.totalDiscovered,
-          total: result.results.length
-        },
-        results: result.results
+        const result = await generateAndRegister(routes)
+
+        logger.success(
+          `Generated ${result.totalGenerated}/${result.results.length} routes (${result.totalDiscovered} discovered)`
+        )
+
+        return sendJson(res, 200, {
+          success: true,
+          summary: {
+            requested: routes.length,
+            generated: result.totalGenerated,
+            discovered: result.totalDiscovered,
+            total: result.results.length
+          },
+          results: result.results
+        })
+      }
+
+      // All other requests should return 404
+      sendJson(res, 404, {
+        success: false,
+        error: 'Endpoint not found. Available: GET /api/health, POST /api/generate'
+      })
+    } catch (err: any) {
+      logger.error('Server error:', err)
+      sendJson(res, 500, {
+        success: false,
+        error: err.message || 'Internal Server Error'
       })
     }
-
-    // All other requests should return 404
-    sendJson(res, 404, {
-      success: false,
-      error: 'Endpoint not found. Available: GET /api/health, POST /api/generate'
-    })
-  } catch (err: any) {
-    console.error('Server error:', err)
-    sendJson(res, 500, {
-      success: false,
-      error: err.message || 'Internal Server Error'
-    })
-  }
+  })
 })
 
 server.listen(PORT, HOST, () => {
-  console.log(`🚀 nuxt-jit-prerender ready at http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`)
-  console.log(`- Output directory: ${OUTPUT_DIR}`)
-  console.log(``)
-  console.log(`- POST /api/generate — Generate static files for routes`)
-  console.log(`- GET  /api/health — Health check`)
+  logger.success(`nuxt-jit-prerender ready at http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`)
+  logger.info(`Output directory: ${OUTPUT_DIR}`)
 })
 
 export default {}

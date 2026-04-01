@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 
+import { logger } from './logger'
+
 export type RouteGenerationResult = {
   route: string
   success: boolean
@@ -137,7 +139,7 @@ export async function renderAndSave(
         }
       } catch {
         // Payload generation is best-effort — log but don't fail the route
-        console.warn(`Could not generate _payload.json for ${pathname}`)
+        logger.warn('Could not generate _payload.json for %s', pathname)
       }
     }
 
@@ -205,6 +207,12 @@ export async function generateRoutes(
 
     for (const result of batchResults) {
       results.push(result)
+
+      if (result.success) {
+        logger.success('Generated route %s', result.route)
+      } else {
+        logger.error('Failed to generate route %s: %s', result.route, result.error)
+      }
 
       // Queue newly discovered routes
       if (result.discoveredRoutes) {
