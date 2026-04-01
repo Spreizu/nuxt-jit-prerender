@@ -1,17 +1,19 @@
-import { defineNuxtModule, addPlugin, createResolver } from '@nuxt/kit'
+import { defineNuxtModule, createResolver } from '@nuxt/kit'
 
-// Module options TypeScript interface definition
 export type ModuleOptions = object
 
 export default defineNuxtModule<ModuleOptions>({
   meta: {
-    name: 'nuxt-runtime-ssg',
-    configKey: 'runtimeSsg',
+    name: 'nuxt-jit-prerender'
   },
-  // Default configuration options of the Nuxt module
   defaults: {},
-  setup(_options, _nuxt) {
+  setup(_options, nuxt) {
     const resolver = createResolver(import.meta.url)
-    addPlugin(resolver.resolve('./runtime/plugin'))
-  },
+
+    // Enable payload extraction
+    nuxt.options.experimental.payloadExtraction = true
+
+    // Use custom nitro preset that will generate static files on demand
+    nuxt.options.nitro.preset = resolver.resolve('./nitro-preset')
+  }
 })

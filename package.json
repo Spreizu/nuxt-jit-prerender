@@ -2,18 +2,15 @@
   "name": "nuxt-jit-prerender",
   "version": "0.0.1",
   "description": "REST API-based static site generation for Nuxt 4. Generate pages incrementally or fully via HTTP endpoints. Lightweight alternative to traditional SSG.",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Spreizu/nuxt-jit-prerender.git"
   },
-  "license": "MIT",
+  "files": [
+    "dist"
+  ],
   "type": "module",
-  "exports": {
-    ".": {
-      "types": "./dist/types.d.mts",
-      "import": "./dist/module.mjs"
-    }
-  },
   "main": "./dist/module.mjs",
   "typesVersions": {
     "*": {
@@ -22,14 +19,18 @@
       ]
     }
   },
-  "files": [
-    "dist"
-  ],
+  "exports": {
+    ".": {
+      "types": "./dist/types.d.mts",
+      "import": "./dist/module.mjs"
+    }
+  },
   "scripts": {
     "prepack": "nuxt-module-build build",
     "dev": "npm run dev:prepare && nuxi dev playground",
     "dev:build": "nuxi build playground",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxi prepare playground",
+    "run-server": "NITRO_JIT_PRERENDER_OUTPUT_DIR=./playground/.output/public node playground/.output/server/index.mjs",
     "postinstall": "pnpm dev:prepare",
     "release": "npm run lint && npm run test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
     "lint": "oxlint .",
