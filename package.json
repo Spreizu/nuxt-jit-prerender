@@ -1,10 +1,10 @@
 {
-  "name": "nuxt-runtime-ssg",
+  "name": "nuxt-jit-prerender",
   "version": "0.0.1",
   "description": "REST API-based static site generation for Nuxt 4. Generate pages incrementally or fully via HTTP endpoints. Lightweight alternative to traditional SSG.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Spreizu/nuxt-runtime-ssg.git"
+    "url": "git+https://github.com/Spreizu/nuxt-jit-prerender.git"
   },
   "license": "MIT",
   "type": "module",
@@ -30,30 +30,28 @@
     "dev": "npm run dev:prepare && nuxi dev playground",
     "dev:build": "nuxi build playground",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxi prepare playground",
+    "postinstall": "pnpm dev:prepare",
     "release": "npm run lint && npm run test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
-    "lint": "eslint .",
+    "lint": "oxlint .",
     "test": "vitest run",
     "test:watch": "vitest watch",
     "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit"
   },
   "dependencies": {
-    "@nuxt/kit": "^4.2.2"
+    "@nuxt/kit": "^4.4.2"
   },
   "devDependencies": {
-    "@nuxt/devtools": "^3.1.1",
-    "@nuxt/eslint-config": "^1.12.1",
+    "@nuxt/devtools": "^4.0.0-alpha.3",
     "@nuxt/module-builder": "^1.0.2",
-    "@nuxt/schema": "^4.2.2",
-    "@nuxt/test-utils": "^3.21.0",
-    "@oxc-minify/binding-darwin-arm64": "0.102.0",
-    "@oxc-parser/binding-darwin-arm64": "0.102.0",
-    "@oxc-transform/binding-darwin-arm64": "0.102.0",
+    "@nuxt/schema": "^4.4.2",
+    "@nuxt/test-utils": "^4.0.0",
     "@types/node": "latest",
     "changelogen": "^0.6.2",
-    "eslint": "^9.39.2",
-    "nuxt": "^4.2.2",
+    "nuxt": "^4.4.2",
+    "oxfmt": "^0.43.0",
+    "oxlint": "^1.58.0",
     "typescript": "~5.9.3",
-    "vitest": "^4.0.15",
-    "vue-tsc": "^3.1.8"
+    "vitest": "^4.1.2",
+    "vue-tsc": "^3.2.6"
   }
 }
