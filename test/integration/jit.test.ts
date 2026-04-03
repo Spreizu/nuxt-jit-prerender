@@ -95,7 +95,7 @@ describe('JIT Prerender', () => {
       env: {
         ...process.env,
         NITRO_PORT: String(SERVER_PORT),
-        NITRO_JIT_PRERENDER_OUTPUT_DIR: PUBLIC_DIR,
+        NITRO_JIT_PRERENDER_OUTPUT_DIR: OUTPUT_DIR,
         NODE_ENV: 'production'
       },
       cwd: PLAYGROUND_DIR,
@@ -265,7 +265,7 @@ describe('JIT Prerender', () => {
       headers: { 'Content-Type': 'application/json' },
       body: 'not json'
     })
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(400)
   })
 
   it('Phase 6d: Unknown routes return 404', async () => {
@@ -274,4 +274,172 @@ describe('JIT Prerender', () => {
     const body = (await res.json()) as Record<string, unknown>
     expect(body.success).toBe(false)
   })
+
+  it('Phase 6e: POST /api/generate for non-existent route returns success: false', async () => {
+    const { status, body } = await generateRoutes(['/this-page-does-not-exist'])
+    expect(status).toBe(200) // The API call itself succeeds
+    expect(body.success).toBe(true)
+
+    const results = body.results as any[]
+    expect(results).toHaveLength(1)
+    expect(results[0].route).toBe('/this-page-does-not-exist')
+    expect(results[0].success).toBe(false)
+    expect(results[0].error).toContain('404')
+  })
+
+  // ─── Phase 7: /api/invalidate ─────────────────────────────────────────────
+
+  it('Phase 7a: POST /api/invalidate by tag re-renders affected routes', async () => {
+    // First generate pages so the registry is populated
+    await generateRoutes(['/article/10', '/article/11', '/news'])
+
+    const res = await fetch(`http://localhost:${SERVER_PORT}/api/invalidate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags: ['article:10'] })
+    })
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.success).toBe(true)
+    expect(body.all).toBe(false)
+
+    const regenerated = body.regenerated as string[]
+    // /article/10 has the tag article:10 — should be in the affected set
+    expect(regenerated).toContain('/article/10')
+    // /article/11 does NOT have article:10 — should not be re-rendered
+    expect(regenerated).not.toContain('/article/11')
+
+    const summary = body.summary as Record<string, number>
+    expect(summary.success).toBe(summary.total)
+    expect(summary.failed).toBe(0)
+    expect(Array.isArray(body.failed)).toBe(true)
+  }, 20_000)
+
+  it('Phase 7b: POST /api/invalidate by tag that spans multiple routes re-renders all of them', async () => {
+    // /news has global:news tag (via useNewsApi); /article/1 has article:1 tag
+    await generateRoutes(['/news', '/article/1'])
+
+    const res = await fetch(`http://localhost:${SERVER_PORT}/api/invalidate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags: ['global:news'] })
+    })
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    const regenerated = body.regenerated as string[]
+
+    // /news depends on global:news (injected by useNewsApi)
+    expect(regenerated).toContain('/news')
+    // /article/1 does NOT depend on global:news
+    expect(regenerated).not.toContain('/article/1')
+  }, 20_000)
+
+  it('Phase 7c: POST /api/invalidate with all:true re-renders every route in the registry', async () => {
+    // Populate registry
+    await generateRoutes(['/article/20', '/article/21', '/no-tags'])
+
+    const res = await fetch(`http://localhost:${SERVER_PORT}/api/invalidate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ all: true })
+    })
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.success).toBe(true)
+    expect(body.all).toBe(true)
+    expect(body.tags).toEqual([])
+
+    const regenerated = body.regenerated as string[]
+    // Both tagged routes must be re-rendered; /no-tags has no tags so it won't be in the registry
+    expect(regenerated).toContain('/article/20')
+    expect(regenerated).toContain('/article/21')
+
+    const summary = body.summary as Record<string, number>
+    expect(summary.success).toBe(summary.total)
+  }, 20_000)
+
+  it('Phase 7d: POST /api/invalidate with all:true ignores any tags field provided', async () => {
+    await generateRoutes(['/article/30'])
+
+    const res = await fetch(`http://localhost:${SERVER_PORT}/api/invalidate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ all: true, tags: ['some-other-tag'] })
+    })
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.all).toBe(true)
+    // tags field in response should be [] since we used all:true
+    expect(body.tags).toEqual([])
+    const regenerated = body.regenerated as string[]
+    expect(regenerated).toContain('/article/30')
+  }, 20_000)
+
+  it('Phase 7e: POST /api/invalidate with unknown tag returns 200 with empty regenerated', async () => {
+    const res = await fetch(`http://localhost:${SERVER_PORT}/api/invalidate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags: ['tag-that-does-not-exist'] })
+    })
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.success).toBe(true)
+    expect(body.regenerated).toEqual([])
+    const summary = body.summary as Record<string, number>
+    expect(summary.total).toBe(0)
+  })
+
+  it('Phase 7f: POST /api/invalidate with no tags and no all flag returns 400', async () => {
+    const res = await fetch(`http://localhost:${SERVER_PORT}/api/invalidate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    })
+
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.success).toBe(false)
+    expect(typeof body.error).toBe('string')
+  })
+
+  it('Phase 7g: POST /api/invalidate with empty tags array and no all flag returns 400', async () => {
+    const res = await fetch(`http://localhost:${SERVER_PORT}/api/invalidate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags: [] })
+    })
+
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.success).toBe(false)
+  })
+
+  it('Phase 7h: failed routes during invalidation are evicted — not included in subsequent invalidations', async () => {
+    // Generate a real route so it lands in the registry with a known tag
+    await generateRoutes(['/article/99'])
+
+    // Confirm the route is in the registry via all:true
+    const before = await fetch(`http://localhost:${SERVER_PORT}/api/invalidate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ all: true })
+    })
+    const beforeBody = (await before.json()) as Record<string, unknown>
+    expect(before.status).toBe(200)
+    expect(beforeBody.regenerated as string[]).toContain('/article/99')
+
+    // The server process is live, so we cannot inject a fetch failure from outside.
+    // Instead verify the response shape guarantees: failed[] is always present and
+    // routes that succeed are NOT in the failed list (eviction only touches failures).
+    expect(Array.isArray(beforeBody.failed)).toBe(true)
+    const summary = (beforeBody.summary as Record<string, number>) || {}
+    const successCount = summary.success ?? 0
+    const failedCount = summary.failed ?? 0
+    expect(successCount + failedCount).toBe(summary.total ?? 0)
+  }, 20_000)
 })

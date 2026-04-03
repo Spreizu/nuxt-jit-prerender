@@ -90,6 +90,23 @@ describe('CacheRegistry', () => {
     expect(json.routeToTags).toEqual({ '/route1': ['tag1'] })
   })
 
+  it('getAllRoutes() returns every tracked route', () => {
+    registry.register('/route1', ['tag1'])
+    registry.register('/route2', ['tag2'])
+    registry.register('/route3', ['tag1', 'tag2'])
+    expect(registry.getAllRoutes().sort()).toEqual(['/route1', '/route2', '/route3'])
+  })
+
+  it('getAllRoutes() returns [] when registry is empty', () => {
+    expect(registry.getAllRoutes()).toEqual([])
+  })
+
+  it('getAllRoutes() excludes routes registered with empty tags', () => {
+    registry.register('/route1', ['tag1'])
+    registry.register('/no-tags', []) // empty tags → not stored
+    expect(registry.getAllRoutes()).toEqual(['/route1'])
+  })
+
   it('save() + load() round-trip preserves data', async () => {
     registry.register('/route1', ['tag1', 'tag2'])
     await registry.save()

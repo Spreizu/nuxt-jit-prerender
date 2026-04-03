@@ -161,6 +161,20 @@ describe('static-writer', () => {
       expect(res.error).toBe('fetch failed')
     })
 
+    it('returns { success: false } for 404 response', async () => {
+      const localFetch = vi.fn().mockImplementation(async () => {
+        return new Response('not found', { status: 404, statusText: 'Not Found' })
+      })
+
+      const res = await renderAndSave(localFetch, outputDir, '/not-found')
+
+      expect(res.success).toBe(false)
+      expect(res.error).toContain('404')
+      
+      // Check file was not written
+      await expect(stat(join(outputDir, 'not-found/index.html'))).rejects.toThrow()
+    })
+
     it('handles payload fetch failure gracefully', async () => {
       const localFetch = vi.fn().mockImplementation(async (url: string) => {
         if (url === '/about') {
@@ -230,6 +244,27 @@ describe('static-writer', () => {
       // but payload fetch happens sequentially after HTML fetch in `renderAndSave`,
       // so actually 2 concurrent `renderAndSave` runs -> max 2 active localFetches at a time.
       expect(maxActiveFetches).toBeLessThanOrEqual(2)
+    })
+
+    it('partial failure: failed routes have success:false and error, successful routes still generate', async () => {
+      const localFetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url === '/broken') throw new Error('fetch exploded')
+        return new Response('html', { status: 200, headers: new Headers() })
+      })
+
+      const res = await generateRoutes(localFetch, ['/ok', '/broken'], outputDir, 2)
+
+      expect(res.results).toHaveLength(2)
+
+      const okResult = res.results.find((r) => r.route === '/ok')
+      expect(okResult?.success).toBe(true)
+
+      const brokenResult = res.results.find((r) => r.route === '/broken')
+      expect(brokenResult?.success).toBe(false)
+      expect(brokenResult?.error).toBe('fetch exploded')
+
+      // Only the successful route is counted
+      expect(res.totalGenerated).toBe(1)
     })
   })
 })
