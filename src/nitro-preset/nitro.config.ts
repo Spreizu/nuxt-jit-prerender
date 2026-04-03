@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { NitroPreset } from 'nitropack'
@@ -7,7 +8,7 @@ export default <NitroPreset>{
   entry: fileURLToPath(new URL('./entry.ts', import.meta.url)),
   serveStatic: false,
   output: {
-    serverDir: './.output/server'
+    serverDir: join(process.env.NITRO_JIT_PRERENDER_OUTPUT_DIR || '.output', 'server')
   },
   prerender: {
     routes: [],

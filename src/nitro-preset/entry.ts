@@ -14,9 +14,11 @@ const nitroApp = useNitroApp()
 const PORT = Number(process.env.NITRO_PORT || process.env.PORT || 3000)
 const HOST = process.env.NITRO_HOST || process.env.HOST || '0.0.0.0'
 const CONCURRENCY = Number(process.env.NITRO_JIT_PRERENDER_CONCURRENCY || 10)
-const OUTPUT_DIR = process.env.NITRO_JIT_PRERENDER_OUTPUT_DIR || '.output/public'
+const PUBLIC_OUTPUT_DIR = join(process.env.NITRO_JIT_PRERENDER_OUTPUT_DIR || '.output', 'public')
 
-const registry = new CacheRegistry(join('.output', '.cache-manifest.json'))
+const registry = new CacheRegistry(
+  join(process.env.NITRO_JIT_PRERENDER_OUTPUT_DIR || '.output', '.cache-manifest.json')
+)
 
 // Load existing cache manifest on startup
 registry.load().catch(() => {})
@@ -60,7 +62,7 @@ function sendJson(res: import('node:http').ServerResponse, status: number, data:
  * @returns Promise<GenerateRoutesResult> - Result of route generation
  */
 async function generateAndRegister(routes: string[]) {
-  const result = await generateRoutes(nitroApp.localFetch, routes, OUTPUT_DIR, CONCURRENCY)
+  const result = await generateRoutes(nitroApp.localFetch, routes, PUBLIC_OUTPUT_DIR, CONCURRENCY)
 
   for (const r of result.results) {
     if (r.success && r.cacheTags && r.cacheTags.length > 0) {
@@ -139,7 +141,7 @@ const server = createServer((req, res) => {
 
 server.listen(PORT, HOST, () => {
   logger.success(`nuxt-jit-prerender ready at http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`)
-  logger.info(`Output directory: ${OUTPUT_DIR}`)
+  logger.info(`Static files will be written to: ${PUBLIC_OUTPUT_DIR}`)
 })
 
 export default {}
