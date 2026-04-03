@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { parseCommaSeparatedList } from '../../src/nitro-preset/utils'
+import { parseCommaSeparatedList } from '../../src/runtime/nitro-preset/utils'
 
 describe('utils', () => {
   describe('parseCommaSeparatedList', () => {

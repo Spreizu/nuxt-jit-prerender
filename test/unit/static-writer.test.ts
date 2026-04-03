@@ -10,7 +10,7 @@ import {
   renderAndSave,
   generateRoutes,
   clearDirCache
-} from '../../src/nitro-preset/static-writer'
+} from '../../src/runtime/nitro-preset/static-writer'
 
 describe('static-writer', () => {
   const outputDir = join(__dirname, '.tmp-output')
@@ -170,7 +170,7 @@ describe('static-writer', () => {
 
       expect(res.success).toBe(false)
       expect(res.error).toContain('404')
-      
+
       // Check file was not written
       await expect(stat(join(outputDir, 'not-found/index.html'))).rejects.toThrow()
     })

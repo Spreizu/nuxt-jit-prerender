@@ -14,9 +14,9 @@ export default defineNuxtModule<ModuleOptions>({
     nuxt.options.experimental.payloadExtraction = true
 
     // Use custom nitro preset that will generate static files on demand
-    nuxt.options.nitro.preset = resolver.resolve('./nitro-preset')
+    nuxt.options.nitro.preset = resolver.resolve('./runtime/nitro-preset')
 
     // Add runtime composables
-    addImportsDir(resolver.resolve('./runtime/composables'))
+    addImportsDir(resolver.resolve('./runtime/app/composables'))
   }
 })

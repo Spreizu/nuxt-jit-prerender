@@ -5,7 +5,7 @@ import type { NitroPreset } from 'nitropack'
 
 export default <NitroPreset>{
   extends: 'node-server',
-  entry: fileURLToPath(new URL('./entry.ts', import.meta.url)),
+  entry: fileURLToPath(new URL('./entry', import.meta.url)),
   serveStatic: false,
   output: {
     serverDir: join(process.env.NUXT_JIT_PRERENDER_OUTPUT_DIR || '.output', 'server')
