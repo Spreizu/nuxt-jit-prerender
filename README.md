@@ -1,11 +1,13 @@
 # Nuxt JIT Prerender
 
-<!-- [![npm version][npm-version-src]][npm-version-href] -->
-<!-- [![npm downloads][npm-downloads-src]][npm-downloads-href] -->
+[![npm version][npm-version-src]][npm-version-href]
+[![npm downloads][npm-downloads-src]][npm-downloads-href]
 [![License][license-src]][license-href]
 [![Nuxt][nuxt-src]][nuxt-href]
 
 A Nuxt 4 module that replaces the standard Nitro SSG preset with a **custom runtime that pre-renders pages on demand** via a lightweight HTTP API. Instead of generating all static files at build time, pages are rendered and written to disk at runtime by calling a REST endpoint — enabling JIT (just-in-time) pre-rendering.
+
+> **NOTE: The current implementation does not work properly behind CDNs (unless the cache is purged manually), as the build ID is not updated in the static files.**
 
 > **⚠️ WARNING: This repository is under heavy development.**
 
