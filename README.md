@@ -7,7 +7,7 @@
 
 A Nuxt 4 module that replaces the standard Nitro SSG preset with a **custom runtime that pre-renders pages on demand** via a lightweight HTTP API. Instead of generating all static files at build time, pages are rendered and written to disk at runtime by calling a REST endpoint — enabling JIT (just-in-time) pre-rendering.
 
-> **⚠️ WARNING: This repository is under heavy development and is not meant to be used yet.**
+> **⚠️ WARNING: This repository is under heavy development.**
 
 <!-- - [✨ &nbsp;Release Notes](/CHANGELOG.md) -->
 <!-- - [🏀 Online playground](https://stackblitz.com/github/your-org/my-module?file=playground%2Fapp.vue) -->
@@ -18,10 +18,11 @@ A Nuxt 4 module that replaces the standard Nitro SSG preset with a **custom runt
 When added as a Nuxt module, `nuxt-jit-prerender`:
 
 1. **Injects a custom Nitro preset** (`src/nitro-preset`) that extends the standard `node-server` preset.
-2. **Replaces the default server entry** with a minimal Node.js HTTP server exposing two API endpoints.
+2. **Replaces the default server entry** with a minimal Node.js HTTP server exposing a REST API.
 3. **Renders pages on demand** by calling Nitro's internal `localFetch` and writing the HTML (and payload JSON) to `.output/public`.
+4. **Tracks dependencies** via a tag-based `CacheRegistry` persisted to `.output/.cache-manifest.json`, allowing for targeted re-renders.
 
-Routes are processed in configurable-concurrency batches. Any additional routes discovered via the `x-nitro-prerender` response header (e.g. `_payload.json`) are automatically queued and rendered too.
+Routes are processed in configurable-concurrency batches. Any additional routes discovered via the `x-nitro-prerender` response header are automatically queued and rendered too.
 
 ## API Endpoints
 
@@ -29,13 +30,16 @@ Routes are processed in configurable-concurrency batches. Any additional routes 
 |--------|------|-------------|
 | `GET`  | `/api/health` | Health check — returns `{ status: "ok", timestamp }` |
 | `POST` | `/api/generate` | Pre-render a list of routes and write them to disk |
+| `POST` | `/api/invalidate` | Re-render routes based on their associated cache tags |
 
 ### `POST /api/generate`
+
+Triggers on-demand generation for a specific list of routes.
 
 **Request body:**
 ```json
 {
-  "routes": ["/", "/about", "/blog/hello-world"]
+  "routes": ["/", "/about"]
 }
 ```
 
@@ -44,37 +48,85 @@ Routes are processed in configurable-concurrency batches. Any additional routes 
 {
   "success": true,
   "summary": {
-    "requested": 3,
-    "generated": 3,
-    "discovered": 3,
-    "total": 6
+    "requested": 2,
+    "generated": 2,
+    "discovered": 2,
+    "total": 4
   },
   "results": [
-    { "route": "/", "success": true, "cacheTags": [], "discoveredRoutes": ["/_payload.json"] },
-    ...
+    { "route": "/", "success": true, "cacheTags": ["page:index"], "discoveredRoutes": ["/_payload.json"] }
   ]
+}
+```
+
+### `POST /api/invalidate`
+
+Triggers re-generation for all routes associated with one or more tags, or for every route known to the registry.
+
+**Request body (tag-based):**
+```json
+{
+  "tags": ["product:123", "category:electronics"]
+}
+```
+
+**Request body (all):**
+```json
+{
+  "all": true
 }
 ```
 
 ## Features
 
 - ⚡ **JIT Pre-rendering** — Render pages at runtime, not at build time
-- 🔄 **Auto-discovery** — Automatically follows the `x-nitro-prerender` response header to render linked assets
-- 📦 **Payload extraction** — Co-renders `_payload.json` alongside each HTML page for SPA hydration
+- 🏷️ **Tag-based Invalidation** — Precision re-rendering of specific pages when data changes
+- 🔄 **Auto-discovery** — Automatically follows the `x-nitro-prerender` response header to render linked assets like `_payload.json`
+- 📦 **Payload extraction** — Co-renders metadata alongside each HTML page for SPA hydration/navigation
 - 🏎️ **Concurrent batch processing** — Configurable concurrency for parallel route generation
-- 🏷️ **Cache tag support** — Pages can declare cache tags via `x-jit-prerender-cache-tags` header (WIP)
+- 💾 **Persistent Registry** — Tracks route-to-tag mappings in a `.cache-manifest.json` file
 - 🏥 **Health check endpoint** — Built-in liveness probe at `GET /api/health`
 - 🪵 **Structured logging** — Request-scoped logging with `consola`; emits JSON logs in CI environments
+
+## Declaring Cache Tags
+
+To use tag-based invalidation, your pages must be associated with one or more tags.
+
+### Using the `useCacheTags` composable (Recommended)
+
+In your Nuxt pages or components, use the auto-imported `useCacheTags` composable to associate the current page with specific tags.
+
+```vue
+<script setup>
+// Tags can be a string or an array of strings
+useCacheTags(['product:123', 'category:electronics'])
+</script>
+```
+
+### Manual Header (Advanced)
+
+If you are not using the composable (e.g., in a Nitro server route or plugin), you can manually set or append the `x-jit-prerender-cache-tags` header.
+
+```ts
+// server/plugins/cache-tags.ts
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('render:response', (response, { event }) => {
+    if (event.path.startsWith('/products/')) {
+      appendHeader(event, 'x-jit-prerender-cache-tags', 'all-products, product:123')
+    }
+  })
+})
+```
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` / `NITRO_PORT` | `3000` | Port the HTTP server listens on |
-| `HOST` / `NITRO_HOST` | `0.0.0.0` | Host the HTTP server binds to |
-| `NITRO_JIT_PRERENDER_CONCURRENCY` | `10` | Max routes rendered in parallel per batch |
-| `NITRO_JIT_PRERENDER_OUTPUT_DIR` | `.output/public` | Directory where static files are written |
-| `NITRO_JIT_PRERENDER_CI` | — | Set to `"true"` for structured JSON log output |
+| `PORT` | `3000` | Port the HTTP server listens on |
+| `HOST` | `0.0.0.0` | Host the HTTP server binds to |
+| `NUXT_JIT_PRERENDER_CONCURRENCY` | `10` | Max routes rendered in parallel per batch |
+| `NUXT_JIT_PRERENDER_OUTPUT_DIR` | `.output` | Root directory for output (contains `/server`, `/public`, `nitro.json` and `.cache-manifest.json`) |
+| `NUXT_JIT_PRERENDER_CI` | — | Set to `"true"` for structured JSON log output |
 
 ## Quick Setup
 
@@ -89,12 +141,17 @@ After building your app (`nuxi build`), start the server and trigger pre-renderi
 
 ```bash
 # Start the pre-render server
-NITRO_JIT_PRERENDER_OUTPUT_DIR=./.output/public node .output/server/index.mjs
+node .output/server/index.mjs
 
 # Trigger pre-rendering for specific routes
 curl -X POST http://localhost:3000/api/generate \
   -H 'Content-Type: application/json' \
   -d '{"routes": ["/", "/about"]}'
+
+# Invalidate a specific product tag
+curl -X POST http://localhost:3000/api/invalidate \
+  -H 'Content-Type: application/json' \
+  -d '{"tags": ["product:123"]}'
 ```
 
 ## Contribution
@@ -116,7 +173,7 @@ curl -X POST http://localhost:3000/api/generate \
   pnpm dev:build
 
   # Start the pre-render server against the built playground
-  pnpm run-server
+  pnpm dev:server
 
   # Lint
   pnpm lint
@@ -127,9 +184,6 @@ curl -X POST http://localhost:3000/api/generate \
 
   # Type-check
   pnpm test:types
-
-  # Release a new version
-  pnpm release
   ```
 
 </details>
