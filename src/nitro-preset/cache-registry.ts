@@ -104,6 +104,13 @@ export class CacheRegistry {
   }
 
   /**
+   * Get every route currently tracked in the registry.
+   */
+  getAllRoutes(): string[] {
+    return [...this.routeToTags.keys()]
+  }
+
+  /**
    * Get the full cache manifest for debugging.
    */
   toJson(): {
