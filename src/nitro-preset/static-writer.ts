@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 
 import { logger } from './logger'
+import { parseCommaSeparatedList } from './utils'
 
 export type RouteGenerationResult = {
   route: string
@@ -13,6 +14,13 @@ export type RouteGenerationResult = {
 
 // Cache for created directories to avoid redundant mkdir calls
 const createdDirs = new Set<string>()
+
+/**
+ * Clear the directory cache
+ */
+export function clearDirCache() {
+  createdDirs.clear()
+}
 
 /**
  * Ensure a directory exists (cached to avoid redundant mkdir calls)
@@ -29,7 +37,7 @@ async function ensureDir(dirPath: string): Promise<void> {
  * @param response - The Response object to read the body from
  * @returns Promise<string> - The body of the response as a string
  */
-export async function readResponseBody(response: Response): Promise<string> {
+async function readResponseBody(response: Response): Promise<string> {
   if (response.body instanceof ReadableStream) {
     const reader = response.body.getReader()
     const chunks: Buffer[] = []
@@ -56,7 +64,7 @@ export async function readResponseBody(response: Response): Promise<string> {
  * @param pathname - The route pathname
  * @returns { filePath: string; dirPath: string } - The file path and directory path
  */
-function resolveFilePath(outputDir: string, pathname: string): { filePath: string; dirPath: string } {
+export function resolveFilePath(outputDir: string, pathname: string): { filePath: string; dirPath: string } {
   const hasExtension = /\.[^/]+$/.test(pathname)
 
   if (hasExtension) {
@@ -87,7 +95,7 @@ export async function writeStaticFile(outputDir: string, pathname: string, conte
 /**
  * Check if a pathname is an HTML page route (not an asset/payload path)
  */
-function isPageRoute(pathname: string): boolean {
+export function isPageRoute(pathname: string): boolean {
   return !/\.[^/]+$/.test(pathname)
 }
 
@@ -116,10 +124,7 @@ export async function renderAndSave(
     const prerenderHeader = response.headers.get('x-nitro-prerender')
     if (prerenderHeader) {
       // The header can contain comma-separated paths
-      const routes = prerenderHeader
-        .split(',')
-        .map((r) => r.trim())
-        .filter(Boolean)
+      const routes = parseCommaSeparatedList(prerenderHeader)
       discoveredRoutes.push(...routes)
     }
 
@@ -144,13 +149,7 @@ export async function renderAndSave(
     }
 
     // Read cache tags declared by the page
-    const cacheTagsHeader = response.headers.get('x-jit-prerender-cache-tags')
-    const cacheTags = cacheTagsHeader
-      ? cacheTagsHeader
-          .split(',')
-          .map((t) => t.trim())
-          .filter(Boolean)
-      : []
+    const cacheTags = parseCommaSeparatedList(response.headers.get('x-jit-prerender-cache-tags'))
 
     return {
       route: pathname,

@@ -1,11 +1,13 @@
 import '#nitro-internal-pollyfills'
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
+import { join } from 'node:path'
 
 import { useNitroApp } from 'nitropack/runtime'
 
+import { CacheRegistry } from './cache-registry'
 import { logger, requestContext } from './logger'
-import { generateRoutes, readResponseBody } from './static-writer'
+import { generateRoutes } from './static-writer'
 
 const nitroApp = useNitroApp()
 
@@ -13,6 +15,11 @@ const PORT = Number(process.env.NITRO_PORT || process.env.PORT || 3000)
 const HOST = process.env.NITRO_HOST || process.env.HOST || '0.0.0.0'
 const CONCURRENCY = Number(process.env.NITRO_JIT_PRERENDER_CONCURRENCY || 10)
 const OUTPUT_DIR = process.env.NITRO_JIT_PRERENDER_OUTPUT_DIR || '.output/public'
+
+const registry = new CacheRegistry(join('.output', '.cache-manifest.json'))
+
+// Load existing cache manifest on startup
+registry.load().catch(() => {})
 
 /**
  * Parse JSON body from an IncomingMessage
@@ -47,13 +54,17 @@ function sendJson(res: import('node:http').ServerResponse, status: number, data:
   res.end(JSON.stringify(data))
 }
 
+/**
+ * Generate routes and register cache tags
+ * @param routes - Array of routes to generate
+ * @returns Promise<GenerateRoutesResult> - Result of route generation
+ */
 async function generateAndRegister(routes: string[]) {
   const result = await generateRoutes(nitroApp.localFetch, routes, OUTPUT_DIR, CONCURRENCY)
 
-  // Register cache tag dependencies for each successfully generated route
   for (const r of result.results) {
     if (r.success && r.cacheTags && r.cacheTags.length > 0) {
-      // TODO: cache registry
+      registry.register(r.route, r.cacheTags)
     }
   }
 
@@ -114,7 +125,7 @@ const server = createServer((req, res) => {
       // All other requests should return 404
       sendJson(res, 404, {
         success: false,
-        error: 'Endpoint not found. Available: GET /api/health, POST /api/generate'
+        error: 'Not Found.'
       })
     } catch (err: any) {
       logger.error('Server error:', err)

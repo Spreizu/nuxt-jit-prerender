@@ -1,4 +1,4 @@
-import { defineNuxtModule, createResolver } from '@nuxt/kit'
+import { addImportsDir, defineNuxtModule, createResolver } from '@nuxt/kit'
 
 export type ModuleOptions = object
 
@@ -15,5 +15,8 @@ export default defineNuxtModule<ModuleOptions>({
 
     // Use custom nitro preset that will generate static files on demand
     nuxt.options.nitro.preset = resolver.resolve('./nitro-preset')
+
+    // Add runtime composables
+    addImportsDir(resolver.resolve('./runtime/composables'))
   }
 })
