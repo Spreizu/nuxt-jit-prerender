@@ -1,6 +1,6 @@
 {
   "name": "nuxt-jit-prerender",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "REST API-based static site generation for Nuxt 4. Generate pages incrementally or fully via HTTP endpoints. Lightweight alternative to traditional SSG.",
   "license": "MIT",
   "repository": {

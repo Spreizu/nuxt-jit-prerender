@@ -1,6 +1,22 @@
 # Changelog
 
 
+## v0.0.3
+
+[compare changes](https://github.com/Spreizu/nuxt-jit-prerender/compare/v0.0.2...v0.0.3)
+
+### 🩹 Fixes
+
+- Ensure nitro-preset is included in dist ([65a4f36](https://github.com/Spreizu/nuxt-jit-prerender/commit/65a4f36))
+
+### 📖 Documentation
+
+- Update README ([aff4ae0](https://github.com/Spreizu/nuxt-jit-prerender/commit/aff4ae0))
+
+### ❤️ Contributors
+
+- Elmo Egers <uplaymedia@gmail.com>
+
 ## v0.0.2
 
 
