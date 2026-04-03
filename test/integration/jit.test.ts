@@ -94,8 +94,8 @@ describe('JIT Prerender', () => {
     serverProcess = spawn('node', [SERVER_ENTRY], {
       env: {
         ...process.env,
-        NITRO_PORT: String(SERVER_PORT),
-        NITRO_JIT_PRERENDER_OUTPUT_DIR: OUTPUT_DIR,
+        PORT: String(SERVER_PORT),
+        NUXT_JIT_PRERENDER_OUTPUT_DIR: OUTPUT_DIR,
         NODE_ENV: 'production'
       },
       cwd: PLAYGROUND_DIR,

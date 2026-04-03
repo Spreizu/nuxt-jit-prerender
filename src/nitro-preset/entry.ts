@@ -11,14 +11,12 @@ import { generateRoutes } from './static-writer'
 
 const nitroApp = useNitroApp()
 
-const PORT = Number(process.env.NITRO_PORT || process.env.PORT || 3000)
-const HOST = process.env.NITRO_HOST || process.env.HOST || '0.0.0.0'
-const CONCURRENCY = Number(process.env.NITRO_JIT_PRERENDER_CONCURRENCY || 10)
-const PUBLIC_OUTPUT_DIR = join(process.env.NITRO_JIT_PRERENDER_OUTPUT_DIR || '.output', 'public')
+const PORT = Number(process.env.PORT || 3000)
+const HOST = process.env.HOST || '0.0.0.0'
+const CONCURRENCY = Number(process.env.NUXT_JIT_PRERENDER_CONCURRENCY || 10)
+const PUBLIC_OUTPUT_DIR = join(process.env.NUXT_JIT_PRERENDER_OUTPUT_DIR || '.output', 'public')
 
-const registry = new CacheRegistry(
-  join(process.env.NITRO_JIT_PRERENDER_OUTPUT_DIR || '.output', '.cache-manifest.json')
-)
+const registry = new CacheRegistry(join(process.env.NUXT_JIT_PRERENDER_OUTPUT_DIR || '.output', '.cache-manifest.json'))
 
 // Load existing cache manifest on startup
 registry.load().catch(() => {})

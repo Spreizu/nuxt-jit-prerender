@@ -12,7 +12,7 @@ export const requestContext = new AsyncLocalStorage<{
  * Create consola logger with request context support
  */
 export const logger = createConsola({
-  ...(process.env.NITRO_JIT_PRERENDER_CI === 'true' && {
+  ...(process.env.NUXT_JIT_PRERENDER_CI === 'true' && {
     reporters: [
       {
         log: (logObj) => {

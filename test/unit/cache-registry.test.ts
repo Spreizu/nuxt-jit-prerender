@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { CacheRegistry } from '../../src/nitro-preset/cache-registry'
 
 describe('CacheRegistry', () => {
-  const persistPath = join(process.env.NITRO_JIT_PRERENDER_OUTPUT_DIR || '.output', 'test-cache-manifest.json')
+  const persistPath = join(process.env.NUXT_JIT_PRERENDER_OUTPUT_DIR || '.output', 'test-cache-manifest.json')
   let registry: CacheRegistry
 
   beforeEach(() => {
