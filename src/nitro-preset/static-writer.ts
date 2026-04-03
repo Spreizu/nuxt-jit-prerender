@@ -116,6 +116,14 @@ export async function renderAndSave(
       }
     })
 
+    if (!response.ok) {
+      return {
+        route: pathname,
+        success: false,
+        error: `Render failed with status ${response.status}`
+      }
+    }
+
     const body = await readResponseBody(response)
     await writeStaticFile(outputDir, pathname, body)
 
