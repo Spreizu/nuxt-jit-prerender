@@ -48,6 +48,18 @@ async function generateRoutes(routes: string[]): Promise<{
   return { status: res.status, body: (await res.json()) as Record<string, unknown> }
 }
 
+async function deleteRoutes(routes: string[]): Promise<{
+  status: number
+  body: Record<string, unknown>
+}> {
+  const res = await fetch(`http://localhost:${SERVER_PORT}/api/route`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ routes })
+  })
+  return { status: res.status, body: (await res.json()) as Record<string, unknown> }
+}
+
 async function readManifest(): Promise<{
   tagToRoutes: Record<string, string[]>
   routeToTags: Record<string, string[]>
@@ -442,4 +454,62 @@ describe('JIT Prerender', () => {
     const failedCount = summary.failed ?? 0
     expect(successCount + failedCount).toBe(summary.total ?? 0)
   }, 20_000)
+
+  // ─── Phase 8: DELETE /api/route ───────────────────────────────────────────
+
+  it('Phase 8a: DELETE /api/route removes routes from disk and registry', async () => {
+    // 1. Generate the route first
+    await generateRoutes(['/article/100'])
+    await expect(readStaticFile('/article/100')).resolves.toContain('<html')
+    await expect(readStaticFile('/article/100/_payload.json')).resolves.toBeTruthy()
+
+    const manifestBefore = await readManifest()
+    expect(manifestBefore.routeToTags['/article/100']).toBeDefined()
+
+    // 2. Delete it
+    const { status, body } = await deleteRoutes(['/article/100'])
+    expect(status).toBe(200)
+    expect(body.success).toBe(true)
+
+    // 3. Verify it is gone from disk
+    await expect(readStaticFile('/article/100')).rejects.toThrow()
+    await expect(readStaticFile('/article/100/_payload.json')).rejects.toThrow()
+
+    // 4. Verify it is gone from registry
+    const manifestAfter = await readManifest()
+    expect(manifestAfter.routeToTags['/article/100']).toBeUndefined()
+  }, 20_000)
+
+  it('Phase 8b: DELETE /api/route also removes empty parent directories', async () => {
+    // article/delete-me/index.html
+    await generateRoutes(['/article/delete-me'])
+    await expect(readStaticFile('/article/delete-me')).resolves.toContain('<html')
+
+    const dirPath = join(PUBLIC_DIR, 'article/delete-me')
+
+    await deleteRoutes(['/article/delete-me'])
+
+    // Both the nested directory and its empty parent should be gone
+    await expect(access(dirPath)).rejects.toThrow()
+  }, 20_000)
+
+  it('Phase 8c: DELETE /api/route rejects path traversal with 400', async () => {
+    const { status, body } = await deleteRoutes(['/../../package.json'])
+    expect(status).toBe(400)
+    expect(body.success).toBe(false)
+    expect(body.error).toContain('traversal')
+  })
+
+  it('Phase 8d: DELETE /api/route rejects _nuxt directory deletion with 400', async () => {
+    const { status, body } = await deleteRoutes(['/_nuxt/test.js'])
+    expect(status).toBe(400)
+    expect(body.success).toBe(false)
+    expect(body.error).toContain('protected route')
+  })
+
+  it('Phase 8e: DELETE /api/route returns 400 for empty routes array', async () => {
+    const { status, body } = await deleteRoutes([])
+    expect(status).toBe(400)
+    expect(body.success).toBe(false)
+  })
 })

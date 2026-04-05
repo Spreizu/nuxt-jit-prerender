@@ -33,6 +33,7 @@ Routes are processed in configurable-concurrency batches. Any additional routes 
 | `GET`  | `/api/health` | Health check — returns `{ status: "ok", timestamp }` |
 | `POST` | `/api/generate` | Pre-render a list of routes and write them to disk |
 | `POST` | `/api/invalidate` | Re-render routes based on their associated cache tags |
+| `DELETE` | `/api/route` | Purge a list of routes from the registry and delete their files from disk |
 
 ### `POST /api/generate`
 
@@ -78,6 +79,22 @@ Triggers re-generation for all routes associated with one or more tags, or for e
   "all": true
 }
 ```
+
+### `DELETE /api/route`
+
+Permanently remove a list of routes from the cache manifest and physically delete their corresponding `.html` and `_payload.json` files from disk.
+
+**Request body:**
+```json
+{
+  "routes": ["/old-page", "/temporary-promo"]
+}
+```
+
+**Security Guards:**
+- **Path Traversal Protection**: Rejects any route that attempts to escape the public output directory using `..`.
+- **`_nuxt` Protection**: Rejects any route targeting or containing the `/_nuxt` directory to prevent deletion of core assets.
+- **Cleanup Safety**: When removing empty folders, the base output directory is always preserved.
 
 ## Features
 
@@ -154,6 +171,11 @@ curl -X POST http://localhost:3000/api/generate \
 curl -X POST http://localhost:3000/api/invalidate \
   -H 'Content-Type: application/json' \
   -d '{"tags": ["product:123"]}'
+
+# Permanently delete a route from disk and registry
+curl -X DELETE http://localhost:3000/api/route \
+  -H 'Content-Type: application/json' \
+  -d '{"routes": ["/old-page"]}'
 ```
 
 ## Contribution

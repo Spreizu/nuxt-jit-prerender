@@ -1,13 +1,14 @@
 import '#nitro-internal-pollyfills'
 import { randomUUID } from 'node:crypto'
+import { rm, rmdir } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { useNitroApp } from 'nitropack/runtime'
 
 import { CacheRegistry } from './cache-registry'
 import { logger, requestContext } from './logger'
-import { generateRoutes } from './static-writer'
+import { generateRoutes, resolveFilePath, isPageRoute } from './static-writer'
 
 const nitroApp = useNitroApp()
 
@@ -38,7 +39,7 @@ function parseBody(req: IncomingMessage): Promise<any> {
         })
       }
     })
-    req.on('error', (err) => {
+    req.on('error', (err: Error) => {
       reject({ statusCode: 500, message: err.message })
     })
   })
@@ -182,6 +183,79 @@ async function handleInvalidate(req: IncomingMessage, res: ServerResponse) {
   })
 }
 
+/**
+ * Handles DELETE /api/route
+ */
+async function handleDelete(req: IncomingMessage, res: ServerResponse) {
+  const body = await parseBody(req)
+  const routes: string[] = body.routes
+
+  if (!Array.isArray(routes) || routes.length === 0) {
+    return sendJson(res, 400, {
+      success: false,
+      error: 'Request body must include a non-empty "routes" array'
+    })
+  }
+
+  const resolvedBase = resolve(PUBLIC_OUTPUT_DIR)
+
+  for (const route of routes) {
+    // Disallow deleting _nuxt files
+    if (route.startsWith('/_nuxt') || route.includes('_nuxt')) {
+      return sendJson(res, 400, {
+        success: false,
+        error: `Cannot delete protected route: ${route}`
+      })
+    }
+
+    const { filePath, dirPath } = resolveFilePath(PUBLIC_OUTPUT_DIR, route)
+    const resolvedPath = resolve(filePath)
+
+    // Disallow path traversal
+    if (!resolvedPath.startsWith(resolvedBase)) {
+      return sendJson(res, 400, {
+        success: false,
+        error: `Invalid route (traversal attempt): ${route}`
+      })
+    }
+
+    // Delete the file
+    await rm(resolvedPath, { force: true })
+    logger.info('Deleted file from disk: %s', resolvedPath)
+
+    // For page routes, also delete their _payload.json
+    if (isPageRoute(route)) {
+      const payloadPath = route === '/' ? '/_payload.json' : `${route}/_payload.json`
+      const { filePath: payloadFilePath } = resolveFilePath(PUBLIC_OUTPUT_DIR, payloadPath)
+      const resolvedPayloadPath = resolve(payloadFilePath)
+
+      // Payload must also be within the base
+      if (resolvedPayloadPath.startsWith(resolvedBase)) {
+        await rm(resolvedPayloadPath, { force: true })
+        logger.info('Deleted payload from disk: %s', resolvedPayloadPath)
+      }
+
+      // Try to remove the directory if it's now empty (and not the base)
+      const resolvedDirPath = resolve(dirPath)
+      if (resolvedDirPath !== resolvedBase && resolvedDirPath.startsWith(resolvedBase)) {
+        try {
+          await rmdir(resolvedDirPath)
+          logger.info('Removed empty directory: %s', resolvedDirPath)
+        } catch {
+          // Directory not empty or doesn't exist, ignore
+        }
+      }
+    }
+  }
+
+  registry.removeRoutes(routes)
+
+  return sendJson(res, 200, {
+    success: true,
+    removed: routes
+  })
+}
+
 const server = createServer((req, res) => {
   const requestId = (req.headers['x-request-id'] as string) || randomUUID()
   const correlationId = req.headers['x-correlation-id'] as string | undefined
@@ -200,6 +274,10 @@ const server = createServer((req, res) => {
       }
       if (url.pathname === '/api/invalidate' && req.method === 'POST') {
         await handleInvalidate(req, res)
+        return
+      }
+      if (url.pathname === '/api/route' && req.method === 'DELETE') {
+        await handleDelete(req, res)
         return
       }
 
