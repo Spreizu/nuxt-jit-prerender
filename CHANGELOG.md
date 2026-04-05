@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v0.0.4
+
+[compare changes](https://github.com/Spreizu/nuxt-jit-prerender/compare/v0.0.3...v0.0.4)
+
+### 🚀 Enhancements
+
+- Add route deletion functionality ([4fbae2c](https://github.com/Spreizu/nuxt-jit-prerender/commit/4fbae2c))
+
+### ❤️ Contributors
+
+- Elmo Egers <uplaymedia@gmail.com>
+
 ## v0.0.3
 
 [compare changes](https://github.com/Spreizu/nuxt-jit-prerender/compare/v0.0.2...v0.0.3)
