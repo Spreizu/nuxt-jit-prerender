@@ -8,6 +8,7 @@ import { useNitroApp } from 'nitropack/runtime'
 
 import { CacheRegistry } from './cache-registry'
 import { logger, requestContext } from './logger'
+import { OperationQueue } from './operation-queue'
 import { generateRoutes, resolveFilePath, isPageRoute } from './static-writer'
 
 const nitroApp = useNitroApp()
@@ -18,6 +19,7 @@ const CONCURRENCY = Number(process.env.NUXT_JIT_PRERENDER_CONCURRENCY || 10)
 const PUBLIC_OUTPUT_DIR = join(process.env.NUXT_JIT_PRERENDER_OUTPUT_DIR || '.output', 'public')
 
 const registry = new CacheRegistry(join(process.env.NUXT_JIT_PRERENDER_OUTPUT_DIR || '.output', '.cache-manifest.json'))
+const queue = new OperationQueue()
 
 // Load existing cache manifest on startup
 registry.load().catch(() => {})
@@ -68,7 +70,8 @@ async function generateAndRegister(routes: string[]) {
 function handleHealth(res: ServerResponse) {
   sendJson(res, 200, {
     status: 'ok',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    queue: queue.status
   })
 }
 
@@ -86,27 +89,44 @@ async function handleGenerate(req: IncomingMessage, res: ServerResponse) {
     })
   }
 
-  logger.start('Generating %d routes.', routes.length)
+  const freshRoutes = queue.dedup(routes, 'generate')
 
-  const result = await generateAndRegister(routes)
+  if (freshRoutes.length === 0) {
+    return sendJson(res, 200, {
+      success: true,
+      summary: {
+        requested: routes.length,
+        generated: 0,
+        discovered: 0,
+        total: 0,
+        deduped: routes.length
+      },
+      results: []
+    })
+  }
 
-  logger.success(
-    'Generated %d/%d routes (%d discovered).',
-    result.totalGenerated,
-    result.results.length,
-    result.totalDiscovered
-  )
+  try {
+    const result = await queue.enqueue('generate', async () => {
+      logger.start('Generating %d routes.', freshRoutes.length)
+      const r = await generateAndRegister(freshRoutes)
+      logger.success('Generated %d/%d routes (%d discovered).', r.totalGenerated, r.results.length, r.totalDiscovered)
+      return r
+    })
 
-  sendJson(res, 200, {
-    success: true,
-    summary: {
-      requested: routes.length,
-      generated: result.totalGenerated,
-      discovered: result.totalDiscovered,
-      total: result.results.length
-    },
-    results: result.results
-  })
+    sendJson(res, 200, {
+      success: true,
+      summary: {
+        requested: routes.length,
+        generated: result.totalGenerated,
+        discovered: result.totalDiscovered,
+        total: result.results.length,
+        deduped: routes.length - freshRoutes.length
+      },
+      results: result.results
+    })
+  } finally {
+    queue.release(freshRoutes)
+  }
 }
 
 /**
@@ -126,6 +146,8 @@ async function handleInvalidate(req: IncomingMessage, res: ServerResponse) {
     })
   }
 
+  // Resolve routes upfront for dedup (trade-off: slightly stale by execution time,
+  // but enables route-level dedup against concurrent generate/invalidate operations)
   const affectedRoutes = all ? registry.getAllRoutes() : registry.getRoutesForTags(tags)
 
   if (affectedRoutes.length === 0) {
@@ -135,52 +157,76 @@ async function handleInvalidate(req: IncomingMessage, res: ServerResponse) {
       tags: all ? [] : tags,
       regenerated: [],
       failed: [],
-      summary: { total: 0, success: 0, failed: 0 }
+      summary: { total: 0, success: 0, failed: 0, deduped: 0 }
     })
   }
 
-  if (all) {
-    logger.info('Invalidating all routes - %d routes affected.', affectedRoutes.length)
-  } else {
-    logger.info('Invalidating tags: [%s] - %d routes affected.', tags.join(', '), affectedRoutes.length)
+  const freshRoutes = queue.dedup(affectedRoutes, 'invalidate')
+
+  if (freshRoutes.length === 0) {
+    return sendJson(res, 200, {
+      success: true,
+      all,
+      tags: all ? [] : tags,
+      regenerated: [],
+      failed: [],
+      summary: { total: 0, success: 0, failed: 0, deduped: affectedRoutes.length }
+    })
   }
 
-  logger.start('Generating %d routes.', affectedRoutes.length)
-  const result = await generateAndRegister(affectedRoutes)
+  try {
+    const { regenerated, failed, result } = await queue.enqueue('invalidate', async () => {
+      if (all) {
+        logger.info('Invalidating routes - %d routes affected.', freshRoutes.length)
+      } else {
+        logger.info('Invalidating tags: [%s] - %d routes affected.', tags.join(', '), freshRoutes.length)
+      }
 
-  // Warn and evict any routes that failed to re-render.
-  // Keeping a broken route in the registry would cause it to be re-attempted
-  // on every future invalidation, never successfully regenerating.
-  const failedRoutes = result.results.filter((r) => !r.success)
-  for (const failed of failedRoutes) {
-    logger.warn(
-      'Route %s failed to regenerate during invalidation (%s) — removing from registry.',
-      failed.route,
-      failed.error ?? 'unknown error'
-    )
-    registry.removeRoute(failed.route)
+      logger.start('Generating %d routes.', freshRoutes.length)
+      const result = await generateAndRegister(freshRoutes)
+
+      const failedRoutes = result.results.filter((r) => !r.success)
+      for (const failed of failedRoutes) {
+        logger.warn(
+          'Route %s failed to regenerate during invalidation (%s) — removing from registry.',
+          failed.route,
+          failed.error ?? 'unknown error'
+        )
+        registry.removeRoute(failed.route)
+      }
+
+      logger.success(
+        'Generated %d/%d routes (%d discovered).',
+        result.totalGenerated,
+        result.results.length,
+        result.totalDiscovered
+      )
+
+      return {
+        affectedRoutes: freshRoutes,
+        result,
+        regenerated: freshRoutes,
+        failed: failedRoutes.map((r) => ({ route: r.route, error: r.error }))
+      }
+    })
+
+    sendJson(res, 200, {
+      success: true,
+      all,
+      tags: all ? [] : tags,
+      regenerated,
+      failed,
+      summary: {
+        total: result.results.length,
+        success: result.totalGenerated,
+        failed: failed.length,
+        deduped: affectedRoutes.length - freshRoutes.length
+      },
+      results: result.results
+    })
+  } finally {
+    queue.release(freshRoutes)
   }
-
-  logger.success(
-    'Generated %d/%d routes (%d discovered).',
-    result.totalGenerated,
-    result.results.length,
-    result.totalDiscovered
-  )
-
-  sendJson(res, 200, {
-    success: true,
-    all,
-    tags: all ? [] : tags,
-    regenerated: affectedRoutes,
-    failed: failedRoutes.map((r) => ({ route: r.route, error: r.error })),
-    summary: {
-      total: result.results.length,
-      success: result.totalGenerated,
-      failed: failedRoutes.length
-    },
-    results: result.results
-  })
 }
 
 /**
@@ -199,8 +245,8 @@ async function handleDelete(req: IncomingMessage, res: ServerResponse) {
 
   const resolvedBase = resolve(PUBLIC_OUTPUT_DIR)
 
+  // Input validation: reject protected routes and traversal attempts before queueing
   for (const route of routes) {
-    // Disallow deleting _nuxt files
     if (route.startsWith('/_nuxt') || route.includes('_nuxt')) {
       return sendJson(res, 400, {
         success: false,
@@ -208,47 +254,53 @@ async function handleDelete(req: IncomingMessage, res: ServerResponse) {
       })
     }
 
-    const { filePath, dirPath } = resolveFilePath(PUBLIC_OUTPUT_DIR, route)
+    const { filePath } = resolveFilePath(PUBLIC_OUTPUT_DIR, route)
     const resolvedPath = resolve(filePath)
 
-    // Disallow path traversal
     if (!resolvedPath.startsWith(resolvedBase)) {
       return sendJson(res, 400, {
         success: false,
         error: `Invalid route (traversal attempt): ${route}`
       })
     }
+  }
 
-    // Delete the file
-    await rm(resolvedPath, { force: true })
-    logger.info('Deleted file from disk: %s', resolvedPath)
+  await queue.enqueue('delete', async () => {
+    for (const route of routes) {
+      const { filePath, dirPath } = resolveFilePath(PUBLIC_OUTPUT_DIR, route)
+      const resolvedPath = resolve(filePath)
 
-    // For page routes, also delete their _payload.json
-    if (isPageRoute(route)) {
-      const payloadPath = route === '/' ? '/_payload.json' : `${route}/_payload.json`
-      const { filePath: payloadFilePath } = resolveFilePath(PUBLIC_OUTPUT_DIR, payloadPath)
-      const resolvedPayloadPath = resolve(payloadFilePath)
+      // Delete the file
+      await rm(resolvedPath, { force: true })
+      logger.info('Deleted file from disk: %s', resolvedPath)
 
-      // Payload must also be within the base
-      if (resolvedPayloadPath.startsWith(resolvedBase)) {
-        await rm(resolvedPayloadPath, { force: true })
-        logger.info('Deleted payload from disk: %s', resolvedPayloadPath)
-      }
+      // For page routes, also delete their _payload.json
+      if (isPageRoute(route)) {
+        const payloadPath = route === '/' ? '/_payload.json' : `${route}/_payload.json`
+        const { filePath: payloadFilePath } = resolveFilePath(PUBLIC_OUTPUT_DIR, payloadPath)
+        const resolvedPayloadPath = resolve(payloadFilePath)
 
-      // Try to remove the directory if it's now empty (and not the base)
-      const resolvedDirPath = resolve(dirPath)
-      if (resolvedDirPath !== resolvedBase && resolvedDirPath.startsWith(resolvedBase)) {
-        try {
-          await rmdir(resolvedDirPath)
-          logger.info('Removed empty directory: %s', resolvedDirPath)
-        } catch {
-          // Directory not empty or doesn't exist, ignore
+        // Payload must also be within the base
+        if (resolvedPayloadPath.startsWith(resolvedBase)) {
+          await rm(resolvedPayloadPath, { force: true })
+          logger.info('Deleted payload from disk: %s', resolvedPayloadPath)
+        }
+
+        // Try to remove the directory if it's now empty (and not the base)
+        const resolvedDirPath = resolve(dirPath)
+        if (resolvedDirPath !== resolvedBase && resolvedDirPath.startsWith(resolvedBase)) {
+          try {
+            await rmdir(resolvedDirPath)
+            logger.info('Removed empty directory: %s', resolvedDirPath)
+          } catch {
+            // Directory not empty or doesn't exist, ignore
+          }
         }
       }
     }
-  }
 
-  registry.removeRoutes(routes)
+    registry.removeRoutes(routes)
+  })
 
   return sendJson(res, 200, {
     success: true,

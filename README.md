@@ -28,18 +28,19 @@ Routes are processed in configurable-concurrency batches. Any additional routes 
 
 ## API Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET`  | `/api/health` | Health check — returns `{ status: "ok", timestamp }` |
-| `POST` | `/api/generate` | Pre-render a list of routes and write them to disk |
-| `POST` | `/api/invalidate` | Re-render routes based on their associated cache tags |
-| `DELETE` | `/api/route` | Purge a list of routes from the registry and delete their files from disk |
+| Method   | Path              | Description                                                               |
+| -------- | ----------------- | ------------------------------------------------------------------------- |
+| `GET`    | `/api/health`     | Health check — returns `{ status: "ok", timestamp }`                      |
+| `POST`   | `/api/generate`   | Pre-render a list of routes and write them to disk                        |
+| `POST`   | `/api/invalidate` | Re-render routes based on their associated cache tags                     |
+| `DELETE` | `/api/route`      | Purge a list of routes from the registry and delete their files from disk |
 
 ### `POST /api/generate`
 
 Triggers on-demand generation for a specific list of routes.
 
 **Request body:**
+
 ```json
 {
   "routes": ["/", "/about"]
@@ -47,6 +48,7 @@ Triggers on-demand generation for a specific list of routes.
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -54,11 +56,10 @@ Triggers on-demand generation for a specific list of routes.
     "requested": 2,
     "generated": 2,
     "discovered": 2,
-    "total": 4
+    "total": 4,
+    "deduped": 0
   },
-  "results": [
-    { "route": "/", "success": true, "cacheTags": ["page:index"], "discoveredRoutes": ["/_payload.json"] }
-  ]
+  "results": [{ "route": "/", "success": true, "cacheTags": ["page:index"], "discoveredRoutes": ["/_payload.json"] }]
 }
 ```
 
@@ -67,6 +68,7 @@ Triggers on-demand generation for a specific list of routes.
 Triggers re-generation for all routes associated with one or more tags, or for every route known to the registry.
 
 **Request body (tag-based):**
+
 ```json
 {
   "tags": ["product:123", "category:electronics"]
@@ -74,6 +76,7 @@ Triggers re-generation for all routes associated with one or more tags, or for e
 ```
 
 **Request body (all):**
+
 ```json
 {
   "all": true
@@ -85,6 +88,7 @@ Triggers re-generation for all routes associated with one or more tags, or for e
 Permanently remove a list of routes from the cache manifest and physically delete their corresponding `.html` and `_payload.json` files from disk.
 
 **Request body:**
+
 ```json
 {
   "routes": ["/old-page", "/temporary-promo"]
@@ -92,6 +96,7 @@ Permanently remove a list of routes from the cache manifest and physically delet
 ```
 
 **Security Guards:**
+
 - **Path Traversal Protection**: Rejects any route that attempts to escape the public output directory using `..`.
 - **`_nuxt` Protection**: Rejects any route targeting or containing the `/_nuxt` directory to prevent deletion of core assets.
 - **Cleanup Safety**: When removing empty folders, the base output directory is always preserved.
@@ -103,6 +108,7 @@ Permanently remove a list of routes from the cache manifest and physically delet
 - 🔄 **Auto-discovery** — Automatically follows the `x-nitro-prerender` response header to render linked assets like `_payload.json`
 - 📦 **Payload extraction** — Co-renders metadata alongside each HTML page for SPA hydration/navigation
 - 🏎️ **Concurrent batch processing** — Configurable concurrency for parallel route generation
+- 🎯 **Route-level dedup** — Concurrent requests for overlapping routes are deduplicated; generates are skipped when an invalidate is already re-rendering the same route
 - 💾 **Persistent Registry** — Tracks route-to-tag mappings in a `.cache-manifest.json` file
 - 🏥 **Health check endpoint** — Built-in liveness probe at `GET /api/health`
 - 🪵 **Structured logging** — Request-scoped logging with `consola`; emits JSON logs in CI environments
@@ -139,13 +145,13 @@ export default defineNitroPlugin((nitroApp) => {
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `3000` | Port the HTTP server listens on |
-| `HOST` | `0.0.0.0` | Host the HTTP server binds to |
-| `NUXT_JIT_PRERENDER_CONCURRENCY` | `10` | Max routes rendered in parallel per batch |
-| `NUXT_JIT_PRERENDER_OUTPUT_DIR` | `.output` | Root directory for output (contains `/server`, `/public`, `nitro.json` and `.cache-manifest.json`) |
-| `NUXT_JIT_PRERENDER_CI` | — | Set to `"true"` for structured JSON log output |
+| Variable                         | Default   | Description                                                                                        |
+| -------------------------------- | --------- | -------------------------------------------------------------------------------------------------- |
+| `PORT`                           | `3000`    | Port the HTTP server listens on                                                                    |
+| `HOST`                           | `0.0.0.0` | Host the HTTP server binds to                                                                      |
+| `NUXT_JIT_PRERENDER_CONCURRENCY` | `10`      | Max routes rendered in parallel per batch                                                          |
+| `NUXT_JIT_PRERENDER_OUTPUT_DIR`  | `.output` | Root directory for output (contains `/server`, `/public`, `nitro.json` and `.cache-manifest.json`) |
+| `NUXT_JIT_PRERENDER_CI`          | —         | Set to `"true"` for structured JSON log output                                                     |
 
 ## Quick Setup
 
@@ -183,45 +189,42 @@ curl -X DELETE http://localhost:3000/api/route \
 <details>
   <summary>Local development</summary>
 
-  ```bash
-  # Install dependencies
-  pnpm install
+```bash
+# Install dependencies
+pnpm install
 
-  # Generate type stubs and prepare the playground
-  pnpm dev:prepare
+# Generate type stubs and prepare the playground
+pnpm dev:prepare
 
-  # Develop with the playground
-  pnpm dev
+# Develop with the playground
+pnpm dev
 
-  # Build the playground
-  pnpm dev:build
+# Build the playground
+pnpm dev:build
 
-  # Start the pre-render server against the built playground
-  pnpm dev:server
+# Start the pre-render server against the built playground
+pnpm dev:server
 
-  # Lint
-  pnpm lint
+# Lint
+pnpm lint
 
-  # Run tests
-  pnpm test
-  pnpm test:watch
+# Run tests
+pnpm test
+pnpm test:watch
 
-  # Type-check
-  pnpm test:types
-  ```
+# Type-check
+pnpm test:types
+```
 
 </details>
 
-
 <!-- Badges -->
+
 [npm-version-src]: https://img.shields.io/npm/v/nuxt-jit-prerender/latest.svg?style=flat&colorA=020420&colorB=00DC82
 [npm-version-href]: https://npmjs.com/package/nuxt-jit-prerender
-
 [npm-downloads-src]: https://img.shields.io/npm/dm/nuxt-jit-prerender.svg?style=flat&colorA=020420&colorB=00DC82
 [npm-downloads-href]: https://npm.chart.dev/nuxt-jit-prerender
-
 [license-src]: https://img.shields.io/github/license/Spreizu/nuxt-jit-prerender?style=flat&colorA=020420&colorB=00DC82
 [license-href]: https://github.com/Spreizu/nuxt-jit-prerender/blob/main/LICENSE
-
 [nuxt-src]: https://img.shields.io/badge/Nuxt-020420?logo=nuxt
 [nuxt-href]: https://nuxt.com

@@ -512,4 +512,132 @@ describe('JIT Prerender', () => {
     expect(status).toBe(400)
     expect(body.success).toBe(false)
   })
+
+  // ─── Phase 9: Concurrency / Queue ──────────────────────────────────────────
+
+  it('Phase 9a: health endpoint includes queue status with pendingRoutes', async () => {
+    const res = await fetch(`http://localhost:${SERVER_PORT}/api/health`)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.queue).toBeDefined()
+    const queue = body.queue as Record<string, unknown>
+    expect(queue).toHaveProperty('activeOperation')
+    expect(queue).toHaveProperty('queued')
+    expect(queue).toHaveProperty('pendingRoutes')
+    expect(Array.isArray(queue.pendingRoutes)).toBe(true)
+  })
+
+  it('Phase 9b: concurrent generate requests execute sequentially and both succeed', async () => {
+    // Fire two generate requests simultaneously
+    const [res1, res2] = await Promise.all([generateRoutes(['/article/200']), generateRoutes(['/article/201'])])
+
+    expect(res1.status).toBe(200)
+    expect(res1.body.success).toBe(true)
+    expect(res2.status).toBe(200)
+    expect(res2.body.success).toBe(true)
+
+    // Both files should exist on disk
+    await expect(readStaticFile('/article/200')).resolves.toContain('<html')
+    await expect(readStaticFile('/article/201')).resolves.toContain('<html')
+  }, 20_000)
+
+  it('Phase 9c: health check is not blocked by a running operation', async () => {
+    // Start a generate (don't await it)
+    const generatePromise = generateRoutes(['/article/300'])
+
+    // Immediately check health — should return right away
+    const healthRes = await fetch(`http://localhost:${SERVER_PORT}/api/health`)
+    expect(healthRes.status).toBe(200)
+
+    // Wait for the generate to finish so it doesn't leak
+    await generatePromise
+  }, 20_000)
+
+  // ─── Phase 10: Route-level dedup ──────────────────────────────────────────
+
+  it('Phase 10a: overlapping concurrent generate requests deduplicates shared routes', async () => {
+    // Fire two generate requests simultaneously with overlapping routes
+    const [res1, res2] = await Promise.all([
+      generateRoutes(['/article/400', '/article/401']),
+      generateRoutes(['/article/401', '/article/402'])
+    ])
+
+    expect(res1.status).toBe(200)
+    expect(res1.body.success).toBe(true)
+    expect(res2.status).toBe(200)
+    expect(res2.body.success).toBe(true)
+
+    // Order of body parsing is non-deterministic, so assert on combined totals:
+    // 3 unique routes total, 1 deduped overlap
+    const summary1 = res1.body.summary as Record<string, number>
+    const summary2 = res2.body.summary as Record<string, number>
+    const totalGenerated = (summary1.generated ?? 0) + (summary2.generated ?? 0)
+    const totalDeduped = (summary1.deduped ?? 0) + (summary2.deduped ?? 0)
+    expect(totalGenerated).toBe(3)
+    expect(totalDeduped).toBe(1)
+
+    // All three routes should exist on disk
+    await expect(readStaticFile('/article/400')).resolves.toContain('<html')
+    await expect(readStaticFile('/article/401')).resolves.toContain('<html')
+    await expect(readStaticFile('/article/402')).resolves.toContain('<html')
+  }, 30_000)
+
+  it('Phase 10b: invalidate deduplicates against pending invalidate', async () => {
+    // First, generate some routes with known tags
+    await generateRoutes(['/article/510', '/article/511'])
+
+    // Fire two invalidates for overlapping tags simultaneously
+    const [res1, res2] = await Promise.all([
+      fetch(`http://localhost:${SERVER_PORT}/api/invalidate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: ['article:510'] })
+      }),
+      fetch(`http://localhost:${SERVER_PORT}/api/invalidate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: ['article:510'] })
+      })
+    ])
+
+    const body1 = (await res1.json()) as Record<string, unknown>
+    const body2 = (await res2.json()) as Record<string, unknown>
+
+    expect(body1.success).toBe(true)
+    expect(body2.success).toBe(true)
+
+    // One of them should have been deduped (the one that arrived second)
+    const summary1 = body1.summary as Record<string, number>
+    const summary2 = body2.summary as Record<string, number>
+    const totalDeduped = (summary1.deduped ?? 0) + (summary2.deduped ?? 0)
+    expect(totalDeduped).toBeGreaterThanOrEqual(1)
+  }, 20_000)
+
+  it('Phase 10c: invalidate is NOT deduped against pending generate', async () => {
+    // Pre-generate so the route is in the registry with tag article:530
+    await generateRoutes(['/article/530'])
+
+    // Now fire a generate and an invalidate for the same route simultaneously.
+    // The invalidate should NOT be deduped — it signals content may have changed.
+    const [genRes, invRes] = await Promise.all([
+      generateRoutes(['/article/530']),
+      fetch(`http://localhost:${SERVER_PORT}/api/invalidate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: ['article:530'] })
+      })
+    ])
+
+    expect(genRes.status).toBe(200)
+    expect(genRes.body.success).toBe(true)
+
+    const invBody = (await invRes.json()) as Record<string, unknown>
+    expect(invBody.success).toBe(true)
+
+    // Invalidate should have run (not deduped against the generate)
+    const invSummary = invBody.summary as Record<string, number>
+    expect(invSummary.deduped).toBe(0)
+    // It should have actually re-generated the route
+    expect(invSummary.total ?? 0).toBeGreaterThanOrEqual(1)
+  }, 20_000)
 })
