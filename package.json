@@ -32,6 +32,7 @@
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxi prepare playground",
     "dev:server": "NUXT_JIT_PRERENDER_OUTPUT_DIR=./playground/.output node playground/.output/server/index.mjs",
     "release": "pnpm lint && pnpm test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
+    "format": "oxfmt",
     "lint": "oxlint .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -51,10 +52,10 @@
     "@vitest/coverage-v8": "^4.1.2",
     "changelogen": "^0.6.2",
     "nuxt": "^4.4.2",
-    "oxfmt": "^0.43.0",
-    "oxlint": "^1.58.0",
+    "oxfmt": "^0.45.0",
+    "oxlint": "^1.60.0",
     "typescript": "~5.9.3",
-    "vitest": "^4.1.2",
+    "vitest": "^4.1.4",
     "vue-tsc": "^3.2.6"
   }
 }
