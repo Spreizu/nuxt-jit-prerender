@@ -1,6 +1,7 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
+import { atomicWriteFile } from './atomic-write'
 import { logger } from './logger'
 
 /**
@@ -172,7 +173,7 @@ export class CacheRegistry {
   async save(): Promise<void> {
     try {
       await mkdir(dirname(this.persistPath), { recursive: true })
-      await writeFile(this.persistPath, JSON.stringify(this.toJson(), null, 2), 'utf-8')
+      await atomicWriteFile(this.persistPath, JSON.stringify(this.toJson(), null, 2), 'utf-8')
     } catch (error) {
       logger.error('Failed to persist cache manifest: %s', error instanceof Error ? error.message : String(error))
     }

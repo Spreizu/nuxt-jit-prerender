@@ -1,6 +1,7 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 
+import { atomicWriteFile } from './atomic-write'
 import { logger } from './logger'
 import { parseCommaSeparatedList } from './utils'
 
@@ -88,7 +89,7 @@ export function resolveFilePath(outputDir: string, pathname: string): { filePath
 export async function writeStaticFile(outputDir: string, pathname: string, content: string): Promise<string> {
   const { filePath, dirPath } = resolveFilePath(outputDir, pathname)
   await ensureDir(dirPath)
-  await writeFile(filePath, content, 'utf-8')
+  await atomicWriteFile(filePath, content, 'utf-8')
   return filePath
 }
 

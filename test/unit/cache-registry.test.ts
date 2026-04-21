@@ -1,7 +1,24 @@
-import { rm } from 'node:fs/promises'
+import { rm, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+
+// Mock atomic-write module so we can simulate write failures
+let _mockAtomicWrite: ((filePath: string, content: string, encoding?: BufferEncoding) => Promise<void>) | null = null
+
+vi.mock('../../src/runtime/nitro-preset/atomic-write', () => ({
+  get atomicWriteFile() {
+    return (
+      _mockAtomicWrite ??
+      (async (filePath: string, content: string, encoding?: BufferEncoding) => {
+        const { atomicWriteFile: real } = await vi.importActual<
+          typeof import('../../src/runtime/nitro-preset/atomic-write')
+        >('../../src/runtime/nitro-preset/atomic-write')
+        return real(filePath, content, encoding)
+      })
+    )
+  }
+}))
 
 import { CacheRegistry } from '../../src/runtime/nitro-preset/cache-registry'
 
@@ -10,10 +27,12 @@ describe('CacheRegistry', () => {
   let registry: CacheRegistry
 
   beforeEach(() => {
+    _mockAtomicWrite = null
     registry = new CacheRegistry(persistPath)
   })
 
   afterEach(async () => {
+    _mockAtomicWrite = null
     try {
       await rm(persistPath, { force: true })
     } catch {}
@@ -139,5 +158,28 @@ describe('CacheRegistry', () => {
     expect(saveSpy).toHaveBeenCalledTimes(1)
 
     vi.useRealTimers()
+  })
+
+  it('save() preserves existing manifest on write failure', async () => {
+    // Pre-populate manifest with valid data
+    const originalData = {
+      tagToRoutes: { tag1: ['/route1'] },
+      routeToTags: { '/route1': ['tag1'] },
+      stats: { totalRoutes: 1, totalTags: 1 }
+    }
+    await writeFile(persistPath, JSON.stringify(originalData, null, 2), 'utf-8')
+
+    // Register new data and mock atomic write to fail
+    registry.register('/route2', ['tag2'])
+    _mockAtomicWrite = async () => {
+      throw new Error('write failed')
+    }
+
+    // save() catches errors internally, so it won't throw
+    await registry.save()
+
+    // The manifest on disk must still have the original data
+    const content = await readFile(persistPath, 'utf-8')
+    expect(JSON.parse(content)).toEqual(originalData)
   })
 })

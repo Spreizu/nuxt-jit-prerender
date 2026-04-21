@@ -1,7 +1,19 @@
-import { rm, readFile, stat } from 'node:fs/promises'
+import { rm, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+
+let _mockRename: ((oldPath: string, newPath: string) => Promise<void>) | null = null
+
+vi.mock('node:fs/promises', async () => {
+  const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+  return {
+    ...actual,
+    get rename() {
+      return _mockRename ?? actual.rename
+    }
+  }
+})
 
 import {
   resolveFilePath,
@@ -16,6 +28,7 @@ describe('static-writer', () => {
   const outputDir = join(__dirname, '.tmp-output')
 
   beforeEach(async () => {
+    _mockRename = null
     clearDirCache()
     // Clear out temp directory
     try {
@@ -24,6 +37,7 @@ describe('static-writer', () => {
   })
 
   afterEach(async () => {
+    _mockRename = null
     try {
       await rm(outputDir, { recursive: true, force: true })
     } catch {}
@@ -78,6 +92,39 @@ describe('static-writer', () => {
 
       const content = await readFile(fp, 'utf-8')
       expect(content).toBe('<h1>hello</h1>')
+    })
+
+    it('never exposes partial content to concurrent readers', async () => {
+      const filePath = join(outputDir, 'about', 'index.html')
+
+      // Pre-populate with old content
+      await writeStaticFile(outputDir, '/about', 'old-content')
+
+      let resolveDelay: () => void
+      const delayPromise = new Promise<void>((resolve) => {
+        resolveDelay = resolve
+      })
+
+      _mockRename = async (oldPath: string, newPath: string) => {
+        await delayPromise
+        const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+        return actual.rename(oldPath, newPath)
+      }
+
+      // Start writing new content in the background
+      const writePromise = writeStaticFile(outputDir, '/about', 'new-content')
+
+      // During the write (rename delayed), the file must still show old content
+      const contentDuringWrite = await readFile(filePath, 'utf-8')
+      expect(contentDuringWrite).toBe('old-content')
+
+      // Complete the write
+      resolveDelay!()
+      await writePromise
+
+      // After completion, the file must show new content
+      const contentAfterWrite = await readFile(filePath, 'utf-8')
+      expect(contentAfterWrite).toBe('new-content')
     })
   })
 
