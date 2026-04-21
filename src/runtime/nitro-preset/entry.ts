@@ -7,11 +7,27 @@ import { join, resolve } from 'node:path'
 import { useNitroApp } from 'nitropack/runtime'
 
 import { CacheRegistry } from './cache-registry'
+import type {
+  AfterDeleteContext,
+  AfterGenerateContext,
+  AfterInvalidateContext,
+  BeforeDeleteContext,
+  BeforeGenerateContext,
+  BeforeInvalidateContext
+} from './hooks'
 import { logger, requestContext } from './logger'
 import { OperationQueue } from './operation-queue'
 import { generateRoutes, resolveFilePath, isPageRoute } from './static-writer'
 
 const nitroApp = useNitroApp()
+
+async function safeCallHook(name: string, ctx: unknown) {
+  try {
+    await nitroApp.hooks.callHook(name as any, ctx as any)
+  } catch (err) {
+    logger.error('Error in hook %s: %s', name, err instanceof Error ? err.message : String(err))
+  }
+}
 
 const PORT = Number(process.env.PORT || 3000)
 const HOST = process.env.HOST || '0.0.0.0'
@@ -106,12 +122,38 @@ async function handleGenerate(req: IncomingMessage, res: ServerResponse) {
   }
 
   try {
+    const generateCtx: BeforeGenerateContext = { routes: [...freshRoutes] }
+    await safeCallHook('jit-prerender:beforeGenerate', generateCtx)
+    const routesToGenerate = generateCtx.routes
+
+    if (routesToGenerate.length === 0) {
+      return sendJson(res, 200, {
+        success: true,
+        summary: {
+          requested: routes.length,
+          generated: 0,
+          discovered: 0,
+          total: 0,
+          deduped: routes.length - freshRoutes.length,
+          filteredByHook: freshRoutes.length
+        },
+        results: []
+      })
+    }
+
     const result = await queue.enqueue('generate', async () => {
-      logger.start('Generating %d routes.', freshRoutes.length)
-      const r = await generateAndRegister(freshRoutes)
+      logger.start('Generating %d routes.', routesToGenerate.length)
+      const r = await generateAndRegister(routesToGenerate)
       logger.success('Generated %d/%d routes (%d discovered).', r.totalGenerated, r.results.length, r.totalDiscovered)
       return r
     })
+
+    await safeCallHook('jit-prerender:afterGenerate', {
+      routes: routesToGenerate,
+      results: result.results,
+      totalGenerated: result.totalGenerated,
+      totalDiscovered: result.totalDiscovered
+    } satisfies AfterGenerateContext)
 
     sendJson(res, 200, {
       success: true,
@@ -175,15 +217,23 @@ async function handleInvalidate(req: IncomingMessage, res: ServerResponse) {
   }
 
   try {
+    const invalidateCtx: BeforeInvalidateContext = {
+      tags: all ? null : tags,
+      all,
+      routes: [...freshRoutes]
+    }
+    await safeCallHook('jit-prerender:beforeInvalidate', invalidateCtx)
+    const routesToInvalidate = invalidateCtx.routes
+
     const { regenerated, failed, result } = await queue.enqueue('invalidate', async () => {
       if (all) {
-        logger.info('Invalidating routes - %d routes affected.', freshRoutes.length)
+        logger.info('Invalidating routes - %d routes affected.', routesToInvalidate.length)
       } else {
-        logger.info('Invalidating tags: [%s] - %d routes affected.', tags.join(', '), freshRoutes.length)
+        logger.info('Invalidating tags: [%s] - %d routes affected.', tags.join(', '), routesToInvalidate.length)
       }
 
-      logger.start('Generating %d routes.', freshRoutes.length)
-      const result = await generateAndRegister(freshRoutes)
+      logger.start('Generating %d routes.', routesToInvalidate.length)
+      const result = await generateAndRegister(routesToInvalidate)
 
       const failedRoutes = result.results.filter((r) => !r.success)
       for (const failed of failedRoutes) {
@@ -202,10 +252,18 @@ async function handleInvalidate(req: IncomingMessage, res: ServerResponse) {
         result.totalDiscovered
       )
 
+      await safeCallHook('jit-prerender:afterInvalidate', {
+        tags: all ? null : tags,
+        all,
+        routes: routesToInvalidate,
+        results: result.results,
+        failed: failedRoutes.map((r) => ({ route: r.route, error: r.error }))
+      } satisfies AfterInvalidateContext)
+
       return {
-        affectedRoutes: freshRoutes,
+        affectedRoutes: routesToInvalidate,
         result,
-        regenerated: freshRoutes,
+        regenerated: routesToInvalidate,
         failed: failedRoutes.map((r) => ({ route: r.route, error: r.error }))
       }
     })
@@ -266,7 +324,11 @@ async function handleDelete(req: IncomingMessage, res: ServerResponse) {
   }
 
   await queue.enqueue('delete', async () => {
-    for (const route of routes) {
+    const deleteCtx: BeforeDeleteContext = { routes: [...routes] }
+    await safeCallHook('jit-prerender:beforeDelete', deleteCtx)
+    const routesToDelete = deleteCtx.routes
+
+    for (const route of routesToDelete) {
       const { filePath, dirPath } = resolveFilePath(PUBLIC_OUTPUT_DIR, route)
       const resolvedPath = resolve(filePath)
 
@@ -299,7 +361,9 @@ async function handleDelete(req: IncomingMessage, res: ServerResponse) {
       }
     }
 
-    registry.removeRoutes(routes)
+    registry.removeRoutes(routesToDelete)
+
+    await safeCallHook('jit-prerender:afterDelete', { routes: routesToDelete } satisfies AfterDeleteContext)
   })
 
   return sendJson(res, 200, {

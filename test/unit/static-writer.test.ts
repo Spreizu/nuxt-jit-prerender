@@ -1,4 +1,4 @@
-import { rm, readFile, stat, writeFile } from 'node:fs/promises'
+import { rm, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'

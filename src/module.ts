@@ -1,5 +1,7 @@
 import { addImportsDir, defineNuxtModule, createResolver } from '@nuxt/kit'
 
+import type {} from './runtime/nitro-preset/hooks'
+
 export type ModuleOptions = object
 
 export default defineNuxtModule<ModuleOptions>({
