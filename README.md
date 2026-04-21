@@ -109,7 +109,9 @@ Permanently remove a list of routes from the cache manifest and physically delet
 - 📦 **Payload extraction** — Co-renders metadata alongside each HTML page for SPA hydration/navigation
 - 🏎️ **Concurrent batch processing** — Configurable concurrency for parallel route generation
 - 🎯 **Route-level dedup** — Concurrent requests for overlapping routes are deduplicated; generates are skipped when an invalidate is already re-rendering the same route
+- 🔒 **Atomic file writes** — Static files and the cache manifest are written via temp-file + rename, preventing partial/corrupt output on crash or concurrent access
 - 💾 **Persistent Registry** — Tracks route-to-tag mappings in a `.cache-manifest.json` file
+- 🪝 **Lifecycle hooks** — Register `before`/`after` hooks for generate, invalidate, and delete operations via Nitro plugins
 - 🏥 **Health check endpoint** — Built-in liveness probe at `GET /api/health`
 - 🪵 **Structured logging** — Request-scoped logging with `consola`; emits JSON logs in CI environments
 
@@ -139,6 +141,57 @@ export default defineNitroPlugin((nitroApp) => {
     if (event.path.startsWith('/products/')) {
       appendHeader(event, 'x-jit-prerender-cache-tags', 'all-products, product:123')
     }
+  })
+})
+```
+
+## Lifecycle Hooks
+
+Register hooks to run before or after generate, invalidate, and delete operations. Hooks are registered via Nitro plugins using `nitroApp.hooks.hook()`.
+
+### Available Hooks
+
+| Hook | Context | Mutability |
+| --- | --- | --- |
+| `jit-prerender:beforeGenerate` | `{ routes: string[] }` | Mutable — add/remove/filter routes |
+| `jit-prerender:afterGenerate` | `{ routes, results, totalGenerated, totalDiscovered }` | Read-only |
+| `jit-prerender:beforeInvalidate` | `{ tags: string[] \| null, all: boolean, routes: string[] }` | Mutable — add/remove/filter routes |
+| `jit-prerender:afterInvalidate` | `{ tags, all, routes, results, failed }` | Read-only |
+| `jit-prerender:beforeDelete` | `{ routes: string[] }` | Mutable — filter routes to prevent deletion |
+| `jit-prerender:afterDelete` | `{ routes: string[] }` | Read-only |
+
+- **Before-hooks** receive a mutable `routes` array — push, splice, or replace it to change what gets processed.
+- **After-hooks** receive a read-only snapshot — use them for logging, metrics, or webhooks.
+- All hooks are async. Hook errors are caught and logged; they never abort the operation.
+
+### Usage
+
+```ts
+// server/plugins/jit-prerender-hooks.ts
+export default defineNitroPlugin((nitroApp) => {
+  // Add extra routes before generation
+  nitroApp.hooks.hook('jit-prerender:beforeGenerate', (ctx) => {
+    if (ctx.routes.includes('/')) {
+      ctx.routes.push('/sitemap.xml')
+    }
+  })
+
+  // Send metrics after generation
+  nitroApp.hooks.hook('jit-prerender:afterGenerate', (ctx) => {
+    console.log(`Generated ${ctx.totalGenerated} routes`)
+  })
+
+  // Protect routes from deletion
+  nitroApp.hooks.hook('jit-prerender:beforeDelete', (ctx) => {
+    ctx.routes = ctx.routes.filter(r => !['/about', '/contact'].includes(r))
+  })
+
+  // Webhook notification after invalidation
+  nitroApp.hooks.hook('jit-prerender:afterInvalidate', async (ctx) => {
+    await fetch('https://example.com/webhook', {
+      method: 'POST',
+      body: JSON.stringify({ event: 'invalidated', routes: ctx.routes })
+    })
   })
 })
 ```
