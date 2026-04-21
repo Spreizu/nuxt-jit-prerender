@@ -21,6 +21,7 @@ const OUTPUT_DIR = join(PLAYGROUND_DIR, '.output')
 const PUBLIC_DIR = join(OUTPUT_DIR, 'public')
 const SERVER_ENTRY = join(OUTPUT_DIR, 'server/index.mjs')
 const MANIFEST_PATH = join(OUTPUT_DIR, '.cache-manifest.json')
+const HOOKS_MARKER_PATH = join(OUTPUT_DIR, '.hooks-marker.json')
 
 const SERVER_PORT = 4242
 
@@ -639,5 +640,80 @@ describe('JIT Prerender', () => {
     expect(invSummary.deduped).toBe(0)
     // It should have actually re-generated the route
     expect(invSummary.total ?? 0).toBeGreaterThanOrEqual(1)
+  }, 20_000)
+
+  // ─── Phase 11: Lifecycle hooks ────────────────────────────────────────────
+
+  async function readHooksMarker(): Promise<Record<string, unknown[]>> {
+    await new Promise((r) => setTimeout(r, 500))
+    const content = await readFile(HOOKS_MARKER_PATH, 'utf-8')
+    return JSON.parse(content)
+  }
+
+  it('Phase 11a: beforeGenerate and afterGenerate hooks fire', async () => {
+    await generateRoutes(['/article/600'])
+
+    const marker = await readHooksMarker()
+
+    const beforeCalls = (marker.beforeGenerate ?? []) as Array<{ routes: string[] }>
+    const afterCalls = (marker.afterGenerate ?? []) as Array<{ routes: string[]; totalGenerated: number }>
+
+    expect(beforeCalls.length).toBeGreaterThanOrEqual(1)
+    expect(afterCalls.length).toBeGreaterThanOrEqual(1)
+
+    const lastBefore = beforeCalls[beforeCalls.length - 1]!
+    expect(lastBefore.routes).toContain('/article/600')
+
+    const lastAfter = afterCalls[afterCalls.length - 1]!
+    expect(lastAfter.routes).toContain('/article/600')
+    expect(lastAfter.totalGenerated).toBeGreaterThanOrEqual(1)
+  }, 20_000)
+
+  it('Phase 11b: beforeInvalidate and afterInvalidate hooks fire', async () => {
+    await generateRoutes(['/article/610'])
+
+    const res = await fetch(`http://localhost:${SERVER_PORT}/api/invalidate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags: ['article:610'] })
+    })
+    expect(res.status).toBe(200)
+
+    const marker = await readHooksMarker()
+
+    const beforeCalls = (marker.beforeInvalidate ?? []) as Array<{ tags: string[] | null; all: boolean; routes: string[] }>
+    const afterCalls = (marker.afterInvalidate ?? []) as Array<{ tags: string[] | null; all: boolean; failed: unknown[] }>
+
+    expect(beforeCalls.length).toBeGreaterThanOrEqual(1)
+    expect(afterCalls.length).toBeGreaterThanOrEqual(1)
+
+    const lastBefore = beforeCalls[beforeCalls.length - 1]!
+    expect(lastBefore.tags).toContain('article:610')
+    expect(lastBefore.all).toBe(false)
+    expect(lastBefore.routes).toContain('/article/610')
+
+    const lastAfter = afterCalls[afterCalls.length - 1]!
+    expect(lastAfter.tags).toContain('article:610')
+    expect(Array.isArray(lastAfter.failed)).toBe(true)
+  }, 20_000)
+
+  it('Phase 11c: beforeDelete and afterDelete hooks fire', async () => {
+    await generateRoutes(['/article/620'])
+
+    await deleteRoutes(['/article/620'])
+
+    const marker = await readHooksMarker()
+
+    const beforeCalls = (marker.beforeDelete ?? []) as Array<{ routes: string[] }>
+    const afterCalls = (marker.afterDelete ?? []) as Array<{ routes: string[] }>
+
+    expect(beforeCalls.length).toBeGreaterThanOrEqual(1)
+    expect(afterCalls.length).toBeGreaterThanOrEqual(1)
+
+    const lastBefore = beforeCalls[beforeCalls.length - 1]!
+    expect(lastBefore.routes).toContain('/article/620')
+
+    const lastAfter = afterCalls[afterCalls.length - 1]!
+    expect(lastAfter.routes).toContain('/article/620')
   }, 20_000)
 })

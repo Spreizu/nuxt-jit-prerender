@@ -20,5 +20,11 @@ export default defineNuxtModule<ModuleOptions>({
 
     // Add runtime composables
     addImportsDir(resolver.resolve('./runtime/app/composables'))
+
+    // Register Nitro hook type augmentation so consumers get autocomplete
+    // for jit-prerender:* hooks in nitroApp.hooks.hook()
+    nuxt.hook('prepare:types', ({ references }) => {
+      references.push({ path: resolver.resolve('./runtime/nitro-preset/hooks') })
+    })
   }
 })
