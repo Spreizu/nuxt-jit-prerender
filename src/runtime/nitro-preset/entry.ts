@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { createApp, createRouter, eventHandler, getRequestHeader, toNodeListener } from 'h3'
+import { createApp, createRouter, eventHandler, getRequestHeader, sendWebResponse, toNodeListener } from 'h3'
 import { useNitroApp } from 'nitropack/runtime'
 
 import { CacheRegistry } from './cache-registry'
@@ -89,17 +89,17 @@ if (PREVIEW_MODE) {
   app.use(createPreviewHandler(handlerCtx))
 }
 
-// Error handler — writes directly to the Node.js response to avoid h3's
-// deferred send() which would conflict with the handled-check lifecycle.
 app.options.onError = (error: any, event) => {
   const status = error.statusCode || 500
   const message = error.statusMessage || error.message || 'Internal Server Error'
   if (status >= 500) logger.error('Server error: %s', message)
-  const res = event.node.res
-  res.statusCode = status
-  res.setHeader('Content-Type', 'application/json; charset=utf-8')
-  res.end(JSON.stringify({ success: false, error: message }))
-  event._handled = true
+  return sendWebResponse(
+    event,
+    new Response(JSON.stringify({ success: false, error: message }), {
+      status,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' }
+    })
+  )
 }
 
 const server = createServer(toNodeListener(app))
