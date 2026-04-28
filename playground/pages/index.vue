@@ -10,7 +10,7 @@
 
 <script setup lang="ts">
 const { data: renderedAt } = await useAsyncData<number>(
-  'renderedAt',
+  'renderedAt_index',
   () => new Promise((resolve) => resolve(Date.now()))
 )
 useCacheTags(['page:home', 'global:footer'])

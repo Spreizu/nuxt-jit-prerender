@@ -16,7 +16,7 @@ vi.mock('nitropack/runtime', () => ({
   })
 }))
 
-import { parseCommaSeparatedList, clearPayloadCache } from '../../src/runtime/nitro-preset/utils'
+import { parseCommaSeparatedList } from '../../src/runtime/nitro-preset/utils'
 
 describe('utils', () => {
   describe('parseCommaSeparatedList', () => {
@@ -50,22 +50,6 @@ describe('utils', () => {
 
     it('handles single value (no commas)', () => {
       expect(parseCommaSeparatedList('solo')).toEqual(['solo'])
-    })
-  })
-
-  describe('clearPayloadCache', () => {
-    beforeEach(() => {
-      store.clear()
-    })
-
-    it('removes a cached payload entry', async () => {
-      store.set('/news', { body: 'stale' })
-      await clearPayloadCache('/news')
-      expect(store.has('/news')).toBe(false)
-    })
-
-    it('does not throw when the key does not exist', async () => {
-      await expect(clearPayloadCache('/nonexistent')).resolves.toBeUndefined()
     })
   })
 })

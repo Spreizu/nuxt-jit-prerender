@@ -1,7 +1,8 @@
 import '#nitro-internal-pollyfills'
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { createApp, createRouter, eventHandler, getRequestHeader, toNodeListener } from 'h3'
 import { useNitroApp } from 'nitropack/runtime'
@@ -26,13 +27,16 @@ async function safeCallHook(name: string, ctx: unknown) {
   }
 }
 
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
 const PORT = Number(process.env.PORT || 3000)
 const HOST = process.env.HOST || '0.0.0.0'
 const CONCURRENCY = Number(process.env.NUXT_JIT_PRERENDER_CONCURRENCY || 10)
 const PREVIEW_MODE = process.env.NUXT_JIT_PRERENDER_PREVIEW === 'true'
-const PUBLIC_OUTPUT_DIR = join(process.env.NUXT_JIT_PRERENDER_OUTPUT_DIR || '.output', 'public')
+const OUTPUT_DIR = process.env.NUXT_JIT_PRERENDER_OUTPUT_DIR || join(__dirname, '..')
+const PUBLIC_OUTPUT_DIR = join(OUTPUT_DIR, 'public')
 
-const registry = new CacheRegistry(join(process.env.NUXT_JIT_PRERENDER_OUTPUT_DIR || '.output', '.cache-manifest.json'))
+const registry = new CacheRegistry(join(OUTPUT_DIR, '.cache-manifest.json'))
 const queue = new OperationQueue()
 
 registry.load().catch(() => {})

@@ -12,7 +12,7 @@
 
 <script setup lang="ts">
 const { data: renderedAt } = await useAsyncData<number>(
-  'renderedAt',
+  'renderedAt_news',
   () => new Promise((resolve) => resolve(Date.now()))
 )
 const { articles } = useNewsApi()

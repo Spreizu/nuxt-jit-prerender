@@ -8,7 +8,7 @@
 <script setup lang="ts">
 const route = useRoute()
 const { data: renderedAt } = await useAsyncData<number>(
-  'renderedAt',
+  'renderedAt_[id]',
   () => new Promise((resolve) => resolve(Date.now()))
 )
 useCacheTags(['page:article', `article:${route.params.id}`])
