@@ -20,7 +20,6 @@ export interface GenerateSummary {
   discovered: number
   total: number
   deduped: number
-  filteredByHook: number
 }
 
 export interface GenerateResponse {

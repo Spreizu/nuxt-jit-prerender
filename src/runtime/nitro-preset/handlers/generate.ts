@@ -38,8 +38,7 @@ export function createGenerateHandler(ctx: HandlerContext): EventHandler {
           generated: 0,
           discovered: 0,
           total: 0,
-          deduped: routes.length,
-          filteredByHook: 0
+          deduped: routes.length
         },
         results: []
       } satisfies GenerateResponse
@@ -58,8 +57,7 @@ export function createGenerateHandler(ctx: HandlerContext): EventHandler {
             generated: 0,
             discovered: 0,
             total: 0,
-            deduped: routes.length - freshRoutes.length,
-            filteredByHook: freshRoutes.length
+            deduped: routes.length - freshRoutes.length
           },
           results: []
         } satisfies GenerateResponse
@@ -83,8 +81,7 @@ export function createGenerateHandler(ctx: HandlerContext): EventHandler {
           generated: result.totalGenerated,
           discovered: result.totalDiscovered,
           total: result.results.length,
-          deduped: routes.length - freshRoutes.length,
-          filteredByHook: 0
+          deduped: routes.length - freshRoutes.length
         },
         results: result.results
       } satisfies GenerateResponse
