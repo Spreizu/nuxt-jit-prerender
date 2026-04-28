@@ -59,7 +59,14 @@ Triggers on-demand generation for a specific list of routes.
     "total": 4,
     "deduped": 0
   },
-  "results": [{ "route": "/", "success": true, "cacheTags": ["page:index"], "discoveredRoutes": ["/_payload.json"] }]
+  "results": [
+    {
+      "route": "/",
+      "success": true,
+      "cacheTags": ["page:index"],
+      "discoveredRoutes": ["/_payload.json"]
+    }
+  ]
 }
 ```
 
@@ -151,14 +158,14 @@ Register hooks to run before or after generate, invalidate, and delete operation
 
 ### Available Hooks
 
-| Hook | Context | Mutability |
-| --- | --- | --- |
-| `jit-prerender:beforeGenerate` | `{ routes: string[] }` | Mutable — add/remove/filter routes |
-| `jit-prerender:afterGenerate` | `{ routes, results, totalGenerated, totalDiscovered }` | Read-only |
-| `jit-prerender:beforeInvalidate` | `{ tags: string[] \| null, all: boolean, routes: string[] }` | Mutable — add/remove/filter routes |
-| `jit-prerender:afterInvalidate` | `{ tags, all, routes, results, failed }` | Read-only |
-| `jit-prerender:beforeDelete` | `{ routes: string[] }` | Mutable — filter routes to prevent deletion |
-| `jit-prerender:afterDelete` | `{ routes: string[] }` | Read-only |
+| Hook                             | Context                                                      | Mutability                                  |
+| -------------------------------- | ------------------------------------------------------------ | ------------------------------------------- |
+| `jit-prerender:beforeGenerate`   | `{ routes: string[] }`                                       | Mutable — add/remove/filter routes          |
+| `jit-prerender:afterGenerate`    | `{ routes, results, totalGenerated, totalDiscovered }`       | Read-only                                   |
+| `jit-prerender:beforeInvalidate` | `{ tags: string[] \| null, all: boolean, routes: string[] }` | Mutable — add/remove/filter routes          |
+| `jit-prerender:afterInvalidate`  | `{ tags, all, routes, results, failed }`                     | Read-only                                   |
+| `jit-prerender:beforeDelete`     | `{ routes: string[] }`                                       | Mutable — filter routes to prevent deletion |
+| `jit-prerender:afterDelete`      | `{ routes: string[] }`                                       | Read-only                                   |
 
 - **Before-hooks** receive a mutable `routes` array — push, splice, or replace it to change what gets processed.
 - **After-hooks** receive a read-only snapshot — use them for logging, metrics, or webhooks.
@@ -183,7 +190,7 @@ export default defineNitroPlugin((nitroApp) => {
 
   // Protect routes from deletion
   nitroApp.hooks.hook('jit-prerender:beforeDelete', (ctx) => {
-    ctx.routes = ctx.routes.filter(r => !['/about', '/contact'].includes(r))
+    ctx.routes = ctx.routes.filter((r) => !['/about', '/contact'].includes(r))
   })
 
   // Webhook notification after invalidation

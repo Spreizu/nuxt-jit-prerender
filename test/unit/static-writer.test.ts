@@ -1,9 +1,17 @@
-import { rm, readFile, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { rm, readFile, stat, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 let _mockRename: ((oldPath: string, newPath: string) => Promise<void>) | null = null
+
+vi.mock('nitropack/runtime', () => ({
+  useStorage: () => ({
+    removeItem: vi.fn(() => Promise.resolve()),
+    getItem: vi.fn(() => Promise.resolve(null)),
+    setItem: vi.fn(() => Promise.resolve())
+  })
+}))
 
 vi.mock('node:fs/promises', async () => {
   const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
@@ -73,6 +81,42 @@ describe('static-writer', () => {
       const result = resolveFilePath(outputDir, '/img/logo.svg')
       expect(result.filePath).toBe(join(outputDir, 'img/logo.svg'))
       expect(result.dirPath).toBe(join(outputDir, 'img'))
+    })
+
+    describe('path traversal vectors', () => {
+      // outputDir = __dirname/.tmp-output, so ../traversal-sentinel.json resolves
+      // to __dirname/traversal-sentinel.json (the sentinel location)
+      const sentinelPath = join(__dirname, 'traversal-sentinel.json')
+      const sentinelContent = 'sentinel-unit-test'
+
+      beforeEach(async () => {
+        await writeFile(sentinelPath, sentinelContent)
+      })
+
+      afterEach(async () => {
+        await rm(sentinelPath, { force: true })
+      })
+
+      it('resolves ../ outside outputDir', () => {
+        const result = resolveFilePath(outputDir, '/../traversal-sentinel.json')
+        expect(resolve(result.filePath).startsWith(resolve(outputDir))).toBe(false)
+      })
+
+      it('resolves disguised ../ outside outputDir', () => {
+        const result = resolveFilePath(outputDir, '/a/../../traversal-sentinel.json')
+        expect(resolve(result.filePath).startsWith(resolve(outputDir))).toBe(false)
+      })
+
+      it('legitimate path stays inside outputDir', () => {
+        const result = resolveFilePath(outputDir, '/about')
+        expect(resolve(result.filePath).startsWith(resolve(outputDir))).toBe(true)
+      })
+
+      it('writeStaticFile with traversal path writes outside outputDir', async () => {
+        const writtenPath = await writeStaticFile(outputDir, '/../traversal-sentinel.json', 'overwritten')
+        expect(resolve(writtenPath).startsWith(resolve(outputDir))).toBe(false)
+        expect(await readFile(sentinelPath, 'utf-8')).toBe('overwritten')
+      })
     })
   })
 

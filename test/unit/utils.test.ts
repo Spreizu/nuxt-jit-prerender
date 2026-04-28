@@ -1,6 +1,22 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-import { parseCommaSeparatedList } from '../../src/runtime/nitro-preset/utils'
+const store = new Map<string, unknown>()
+
+vi.mock('nitropack/runtime', () => ({
+  useStorage: () => ({
+    removeItem: vi.fn((key: string) => {
+      store.delete(key)
+      return Promise.resolve()
+    }),
+    getItem: vi.fn((key: string) => Promise.resolve(store.get(key) ?? null)),
+    setItem: vi.fn((key: string, value: unknown) => {
+      store.set(key, value)
+      return Promise.resolve()
+    })
+  })
+}))
+
+import { parseCommaSeparatedList, clearPayloadCache } from '../../src/runtime/nitro-preset/utils'
 
 describe('utils', () => {
   describe('parseCommaSeparatedList', () => {
@@ -34,6 +50,22 @@ describe('utils', () => {
 
     it('handles single value (no commas)', () => {
       expect(parseCommaSeparatedList('solo')).toEqual(['solo'])
+    })
+  })
+
+  describe('clearPayloadCache', () => {
+    beforeEach(() => {
+      store.clear()
+    })
+
+    it('removes a cached payload entry', async () => {
+      store.set('/news', { body: 'stale' })
+      await clearPayloadCache('/news')
+      expect(store.has('/news')).toBe(false)
+    })
+
+    it('does not throw when the key does not exist', async () => {
+      await expect(clearPayloadCache('/nonexistent')).resolves.toBeUndefined()
     })
   })
 })
