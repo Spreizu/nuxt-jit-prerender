@@ -20,7 +20,7 @@ A Nuxt 4 module that replaces the standard Nitro SSG preset with a **custom runt
 When added as a Nuxt module, `nuxt-jit-prerender`:
 
 1. **Injects a custom Nitro preset** (`src/nitro-preset`) that extends the standard `node-server` preset.
-2. **Replaces the default server entry** with a minimal Node.js HTTP server exposing a REST API.
+2. **Replaces the default server entry** with a lightweight [h3](https://h3.unjs.io/) server exposing a REST API.
 3. **Renders pages on demand** by calling Nitro's internal `localFetch` and writing the HTML (and payload JSON) to `.output/public`.
 4. **Tracks dependencies** via a tag-based `CacheRegistry` persisted to `.output/.cache-manifest.json`, allowing for targeted re-renders.
 
@@ -203,6 +203,20 @@ export default defineNitroPlugin((nitroApp) => {
 })
 ```
 
+## Preview Mode
+
+Set `NUXT_JIT_PRERENDER_PREVIEW=true` to enable a local preview of the Nuxt app. When active, a catch-all handler serves all non-`/api/` requests:
+
+- **Page routes** (e.g. `/about`) and `/_payload.json` files are SSR-rendered fresh via Nitro's `localFetch`, bypassing the static files on disk.
+- **Static assets** (`/_nuxt/` bundles, images, fonts, etc.) are served directly from `.output/public`.
+- **`/api/` paths** return 404 to avoid invoking the API handlers during preview.
+
+This is useful for local development or testing before deploying to production — you get a fully rendered preview without needing to call the generate endpoint first.
+
+```bash
+NUXT_JIT_PRERENDER_PREVIEW=true node .output/server/index.mjs
+```
+
 ## Environment Variables
 
 | Variable                         | Default   | Description                                                                                        |
@@ -210,6 +224,7 @@ export default defineNitroPlugin((nitroApp) => {
 | `PORT`                           | `3000`    | Port the HTTP server listens on                                                                    |
 | `HOST`                           | `0.0.0.0` | Host the HTTP server binds to                                                                      |
 | `NUXT_JIT_PRERENDER_CONCURRENCY` | `10`      | Max routes rendered in parallel per batch                                                          |
+| `NUXT_JIT_PRERENDER_PREVIEW`     | `false`   | Enable preview mode — serves SSR-rendered pages and static assets from disk                        |
 | `NUXT_JIT_PRERENDER_OUTPUT_DIR`  | `.output` | Root directory for output (contains `/server`, `/public`, `nitro.json` and `.cache-manifest.json`) |
 | `NUXT_JIT_PRERENDER_CI`          | —         | Set to `"true"` for structured JSON log output                                                     |
 
