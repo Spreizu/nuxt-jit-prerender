@@ -30,7 +30,8 @@ export async function waitForServer(port: number, timeoutMs = 15_000): Promise<v
   while (Date.now() < deadline) {
     try {
       const res = await fetch(`http://localhost:${port}/api/health`)
-      if (res.ok) return
+      // Any response (even 404 in preview mode) means the server is listening
+      return
     } catch {}
     await new Promise((r) => setTimeout(r, 200))
   }

@@ -71,10 +71,12 @@ app.use(
   })
 )
 
-router.get('/api/health', createHealthHandler(handlerCtx))
-router.post('/api/generate', createGenerateHandler(handlerCtx))
-router.post('/api/invalidate', createInvalidateHandler(handlerCtx))
-router.delete('/api/route', createDeleteHandler(handlerCtx))
+if (!PREVIEW_MODE) {
+  router.get('/api/health', createHealthHandler(handlerCtx))
+  router.post('/api/generate', createGenerateHandler(handlerCtx))
+  router.post('/api/invalidate', createInvalidateHandler(handlerCtx))
+  router.delete('/api/route', createDeleteHandler(handlerCtx))
+}
 
 app.use(router)
 

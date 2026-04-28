@@ -89,27 +89,9 @@ describe('GET preview mode', () => {
     expect(Number(match![1])).toBeGreaterThan(staleTimestamp)
   })
 
-  it('API endpoints still work alongside preview mode', async () => {
+  it('API endpoints return 404 in preview mode', async () => {
     const res = await fetch(`http://localhost:${PORT}/api/health`)
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as Record<string, unknown>
-    expect(body.status).toBe('ok')
-  })
-
-  it('API generate still works and writes to disk', async () => {
-    const res = await fetch(`http://localhost:${PORT}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ routes: ['/no-tags'] })
-    })
-
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as Record<string, unknown>
-    expect(body.success).toBe(true)
-
-    await expect(
-      import('node:fs/promises').then((fs) => fs.readFile(join(PUBLIC_DIR, 'no-tags/index.html'), 'utf-8'))
-    ).resolves.toContain('<html')
+    expect(res.status).toBe(404)
   })
 
   it('serves 404 for non-existent assets', async () => {
@@ -139,9 +121,7 @@ describe('GET preview mode', () => {
   })
 
   it('renders _payload.json fresh via SSR, not from stale disk file', async () => {
-    // Generate /news so a stale _payload.json exists on disk
-    await generateRoutes(PORT, ['/news'])
-
+    // /news was generated in beforeAll on the non-preview server, so a stale _payload.json exists
     const stalePayload = await readStaticFile(PUBLIC_DIR, '/news/_payload.json')
     const staleData: unknown[] = JSON.parse(stalePayload)
     const staleTimestamp = staleData.findLast((v): v is number => typeof v === 'number') ?? 0
