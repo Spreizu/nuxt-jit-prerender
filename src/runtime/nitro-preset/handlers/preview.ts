@@ -33,14 +33,17 @@ export async function handlePreview(
   const filePath = join(publicDir, pathname)
   const stats = await stat(filePath).catch(() => null)
   if (stats?.isFile()) {
-    return sendWebResponse(event, new Response(new Uint8Array(await readFile(filePath)), {
-      status: 200,
-      headers: {
-        'Content-Type': lookup(pathname) || 'application/octet-stream',
-        'Content-Length': String(stats.size),
-        'Last-Modified': new Date(stats.mtime).toUTCString()
-      }
-    }))
+    return sendWebResponse(
+      event,
+      new Response(new Uint8Array(await readFile(filePath)), {
+        status: 200,
+        headers: {
+          'Content-Type': lookup(pathname) || 'application/octet-stream',
+          'Content-Length': String(stats.size),
+          'Last-Modified': new Date(stats.mtime).toUTCString()
+        }
+      })
+    )
   }
 
   throw createError({ statusCode: 404, statusMessage: 'Not Found.' })
